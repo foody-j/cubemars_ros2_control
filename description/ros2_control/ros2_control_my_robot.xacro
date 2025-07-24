@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <ros2_control name="my_robot_control" type="system">
+        <hardware>
+            <plugin>sfbot_can/MyRobotSystemHardware</plugin>
+        </hardware>
+        
+        <!-- Joint 1: Base rotation (Z-axis) -->
+        <joint name="link1_1_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+        </joint>
+        
+        <!-- Joint 2: Shoulder pitch (X-axis) -->
+        <joint name="link2_1_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+        </joint>
+        
+        <!-- Joint 3: Elbow rotation (Z-axis) -->
+        <joint name="link3_1_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+        </joint>
+        
+        <!-- Joint 4: Wrist pitch (X-axis) -->
+        <joint name="link4_1_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+        </joint>
+        
+        <!-- Joint 5: Wrist rotation (Z-axis) -->
+        <joint name="link5_1_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+        </joint>
+        
+        <!-- Joint 6: End effector rotation (X-axis) -->
+        <joint name="link6_1_joint">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+        </joint>
+
+    </ros2_control>
+
+</robot>

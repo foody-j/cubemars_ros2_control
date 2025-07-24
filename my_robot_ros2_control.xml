@@ -1,0 +1,9 @@
+<library path="my_robot_ros2_control">
+  <class name="my_robot_ros2_control/MyRobotSystemHardware"
+         type="my_robot_ros2_control::MyRobotSystemHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+        A hardware interface for my_robot.
+    </description>
+  </class>
+</library>

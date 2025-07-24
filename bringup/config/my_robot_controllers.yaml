@@ -1,0 +1,56 @@
+#sfbot_can/bringup/config/test_controllers.yaml
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - link1_1_joint
+      - link2_1_joint
+      - link3_1_joint
+      - link4_1_joint
+      - link5_1_joint
+      - link6_1_joint
+    constraints:
+      goal_time: 0.1
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+    state_publish_rate: 200
+    action_monitor_rate: 50.0
+    allow_partial_joints_goal: false
+    open_loop_control: false
+
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - link1_1_joint
+      - link2_1_joint
+      - link3_1_joint
+      - link4_1_joint
+      - link5_1_joint
+      - link6_1_joint
+    interface_name: position
+    command_interfaces:
+      - position
+
+joint_state_broadcaster:
+  ros__parameters:
+    joints:
+      - link1_1_joint
+      - link2_1_joint
+      - link3_1_joint
+      - link4_1_joint
+      - link5_1_joint
+      - link6_1_joint

@@ -1,0 +1,353 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="my_robot">
+
+  <!-- Materials -->
+  <material name="robot_black">
+    <color rgba="0.2 0.2 0.2 1"/>
+  </material>
+  <material name="robot_white">
+    <color rgba="0.9 0.9 0.9 1"/>
+  </material>
+  <material name="robot_red">
+    <color rgba="0.8 0.2 0.2 1"/>
+  </material>
+  <material name="robot_blue">
+    <color rgba="0.2 0.4 0.8 1"/>
+  </material>
+  <material name="robot_green">
+    <color rgba="0.2 0.8 0.2 1"/>
+  </material>
+  <material name="robot_yellow">
+    <color rgba="0.9 0.9 0.1 1"/>
+  </material>
+  <material name="robot_orange">
+    <color rgba="1.0 0.5 0.1 1"/>
+  </material>
+  <material name="robot_purple">
+    <color rgba="0.6 0.2 0.8 1"/>
+  </material>
+
+  <!-- Xacro properties for common values -->
+  <xacro:property name="mesh_scale" value="0.001 0.001 0.001"/>
+  <xacro:property name="joint_effort" value="0.0"/>
+  <xacro:property name="joint_velocity" value="0.0"/>
+  <xacro:property name="joint_lower_limit" value="-3.14"/>
+  <xacro:property name="joint_upper_limit" value="3.14"/>
+
+  <!-- Macro for mesh link -->
+  <xacro:macro name="mesh_link" params="name mesh_file material_name collision_xyz:='0 0 0' visual_xyz:='0 0 0' collision_geometry:=''">
+    <link name="${name}">
+      <collision name="mesh_${name}_collision">
+        <origin rpy="0.0 0.0 0.0" xyz="${collision_xyz}"/>
+        <geometry>
+          <xacro:if value="${collision_geometry == ''}">
+            <mesh filename="package://my_robot_ros2_control/description/urdf/meshes/${mesh_file}" scale="${mesh_scale}"/>
+          </xacro:if>
+          <xacro:if value="${collision_geometry == 'box'}">
+            <box size="0.07 0.115 0.015"/>
+          </xacro:if>
+          <!-- 필요시 다른 geometry 타입들 추가 -->
+        </geometry>
+      </collision>
+      <visual name="mesh_${name}">
+        <material name="${material_name}"/>
+        <origin rpy="0.0 0.0 0.0" xyz="${visual_xyz}"/>
+        <geometry>
+          <mesh filename="package://my_robot_ros2_control/description/urdf/meshes/${mesh_file}" scale="${mesh_scale}"/>
+        </geometry>
+      </visual>
+    </link>
+  </xacro:macro>
+
+  <!-- Macro for revolute joint -->
+  <xacro:macro name="revolute_joint" params="name parent child xyz rpy axis">
+    <joint name="${name}" type="revolute">
+      <limit lower="${joint_lower_limit}" upper="${joint_upper_limit}" effort="${joint_effort}" velocity="${joint_velocity}"/>
+      <origin rpy="${rpy}" xyz="${xyz}"/>
+      <parent link="${parent}"/>
+      <child link="${child}"/>
+      <axis xyz="${axis}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Macro for fixed joint -->
+  <xacro:macro name="fixed_joint" params="name parent child xyz rpy">
+    <joint name="${name}" type="fixed">
+      <origin rpy="${rpy}" xyz="${xyz}"/>
+      <parent link="${parent}"/>
+      <child link="${child}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- World Link -->
+  <link name="world"/>
+
+  <!-- Base Joint (connects world to robot) -->
+  <joint name="base_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="world"/>
+    <child link="base_link"/>        
+  </joint>
+
+  <!-- Base Link -->
+  <xacro:mesh_link name="base_link" 
+                   mesh_file="mesh_base_link.stl" 
+                   material_name="robot_black"
+                   collision_xyz="0 0 0"
+                   visual_xyz="0 0 0"/>
+
+  <!-- Link 1 Motor -->
+  <xacro:fixed_joint name="link1_motor_joint" 
+                     parent="base_link" 
+                     child="link1_motor"
+                     xyz="0 0 0.0263" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link1_motor" 
+                   mesh_file="mesh_link1_motor.stl" 
+                   material_name="robot_red"
+                   collision_xyz="0 0 -0.0263"
+                   visual_xyz="0 0 -0.0263"/>
+
+  <!-- Link 1_1 -->
+  <xacro:revolute_joint name="link1_1_joint" 
+                        parent="link1_motor" 
+                        child="link1_1"
+                        xyz="0 0 0.0507" 
+                        rpy="0 0 0"
+                        axis="0 0 1"/>
+
+  <xacro:mesh_link name="link1_1" 
+                   mesh_file="mesh_link1_1.stl" 
+                   material_name="robot_blue"
+                   collision_xyz="0 0 -0.077"
+                   visual_xyz="0 0 -0.077">
+  </xacro:mesh_link>
+
+  <!-- Link 1_2 -->
+  <xacro:fixed_joint name="link1_2_joint" 
+                     parent="link1_1" 
+                     child="link1_2"
+                     xyz="0 0 0.015" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link1_2" 
+                   mesh_file="mesh_link1_2.stl" 
+                   material_name="robot_white"
+                   collision_xyz="0 0 -0.092"
+                   visual_xyz="0 0 -0.092"/>
+
+  <!-- Link 2 Motor -->
+  <xacro:fixed_joint name="link2_motor_joint" 
+                     parent="link1_2" 
+                     child="link2_motor"
+                     xyz="0 0 0.059" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link2_motor" 
+                   mesh_file="mesh_link2_motor.stl" 
+                   material_name="robot_red"
+                   collision_xyz="0 0 -0.151"
+                   visual_xyz="0 0 -0.151"/>
+
+  <!-- Link 2_1 -->
+  <xacro:revolute_joint name="link2_1_joint" 
+                        parent="link2_motor" 
+                        child="link2_1"
+                        xyz="0.009 0 0" 
+                        rpy="0 0 0"
+                        axis="1 0 0"/>
+
+  <xacro:mesh_link name="link2_1" 
+                   mesh_file="mesh_link2_1.stl" 
+                   material_name="robot_green"
+                   collision_xyz="-0.009 0 -0.151"
+                   visual_xyz="-0.009 0 -0.151"/>
+
+  <!-- Link 2_2 -->
+  <xacro:fixed_joint name="link2_2_joint" 
+                     parent="link2_1" 
+                     child="link2_2"
+                     xyz="0.015 0 0" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link2_2" 
+                   mesh_file="mesh_link2_PLA.stl" 
+                   material_name="robot_white"
+                   collision_xyz="-0.024 0 -0.151"
+                   visual_xyz="-0.024 0 -0.151"/>
+
+  <!-- Link 2_3 -->
+  <xacro:fixed_joint name="link2_3_joint" 
+                     parent="link2_2" 
+                     child="link2_3"
+                     xyz="0.075 0 0.13" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link2_3" 
+                   mesh_file="mesh_link2_7.stl" 
+                   material_name="robot_yellow"
+                   collision_xyz="-0.099 0 -0.281"
+                   visual_xyz="-0.099 0 -0.281"/>
+
+  <!-- Link 3 Motor -->
+  <xacro:fixed_joint name="link3_motor_joint" 
+                     parent="link2_3" 
+                     child="link3_motor"
+                     xyz="0 0 0.021" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link3_motor" 
+                   mesh_file="mesh_link3_motor.stl" 
+                   material_name="robot_red"
+                   collision_xyz="-0.099 0 -0.302"
+                   visual_xyz="-0.099 0 -0.302"/>
+
+  <!-- Link 3_1 -->
+  <xacro:revolute_joint name="link3_1_joint" 
+                        parent="link3_motor" 
+                        child="link3_1"
+                        xyz="0 0 0.03905" 
+                        rpy="0 0 0"
+                        axis="0 0 1"/>
+
+  <xacro:mesh_link name="link3_1" 
+                   mesh_file="mesh_link3_1.stl" 
+                   material_name="robot_orange"
+                   collision_xyz="-0.099 0 -0.34105"
+                   visual_xyz="-0.099 0 -0.34105"/>
+
+  <!-- Link 3_2 -->
+  <xacro:fixed_joint name="link3_2_joint" 
+                     parent="link3_1" 
+                     child="link3_2"
+                     xyz="0 0 0.015" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link3_2" 
+                   mesh_file="mesh_link3_2.stl" 
+                   material_name="robot_purple"
+                   collision_xyz="-0.099 0 -0.35605"
+                   visual_xyz="-0.099 0 -0.35605"/>
+
+  <!-- Link 4 Motor -->
+  <xacro:fixed_joint name="link4_motor_joint" 
+                     parent="link3_2" 
+                     child="link4_motor"
+                     xyz="0.004 0 0.0546" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link4_motor" 
+                   mesh_file="mesh_link4_motor.stl" 
+                   material_name="robot_red"
+                   collision_xyz="-0.103 0 -0.41065"
+                   visual_xyz="-0.103 0 -0.41065"/>
+
+  <!-- Link 4_1 -->
+  <xacro:revolute_joint name="link4_1_joint" 
+                        parent="link4_motor" 
+                        child="link4_1"
+                        xyz="-0.0065 0 0" 
+                        rpy="0 0 0"
+                        axis="-1 0 0"/>
+
+  <xacro:mesh_link name="link4_1" 
+                   mesh_file="mesh_link4_1.stl" 
+                   material_name="robot_blue"
+                   collision_xyz="-0.0965 0 -0.41065"
+                   visual_xyz="-0.0965 0 -0.41065"/>
+
+  <!-- Link 4_2 -->
+  <xacro:fixed_joint name="link4_2_joint" 
+                     parent="link4_1" 
+                     child="link4_2"
+                     xyz="-0.015 0 0" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link4_2" 
+                   mesh_file="mesh_link4_PLA.stl" 
+                   material_name="robot_white"
+                   collision_xyz="-0.0815 0 -0.41065"
+                   visual_xyz="-0.0815 0 -0.41065"/>
+
+  <!-- Link 4_3 -->
+  <xacro:fixed_joint name="link4_3_joint" 
+                     parent="link4_2" 
+                     child="link4_3"
+                     xyz="-0.075 0 0.1" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link4_3" 
+                   mesh_file="mesh_link4_7.stl" 
+                   material_name="robot_green"
+                   collision_xyz="-0.0065 0 -0.51065"
+                   visual_xyz="-0.0065 0 -0.51065"/>
+
+  <!-- Link 5 Motor -->
+  <xacro:fixed_joint name="link5_motor_joint" 
+                     parent="link4_3" 
+                     child="link5_motor"
+                     xyz="0 0 0.02" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link5_motor" 
+                   mesh_file="mesh_link5_motor.stl" 
+                   material_name="robot_red"
+                   collision_xyz="-0.0065 0 -0.53065"
+                   visual_xyz="-0.0065 0 -0.53065"/>
+
+  <!-- Link 5_1 -->
+  <xacro:revolute_joint name="link5_1_joint" 
+                        parent="link5_motor" 
+                        child="link5_1"
+                        xyz="0 0 0.029" 
+                        rpy="0 0 0"
+                        axis="0 0 1"/>
+
+  <xacro:mesh_link name="link5_1" 
+                   mesh_file="mesh_link5_1.stl" 
+                   material_name="robot_yellow"
+                   collision_xyz="-0.0065 0 -0.55965"
+                   visual_xyz="-0.0065 0 -0.55965"/>
+
+  <!-- Link 5_2 -->
+  <xacro:fixed_joint name="link5_2_joint" 
+                     parent="link5_1" 
+                     child="link5_2"
+                     xyz="0 0 0.02" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link5_2" 
+                   mesh_file="mesh_link5_2.stl" 
+                   material_name="robot_orange"
+                   collision_xyz="-0.0065 0 -0.57965"
+                   visual_xyz="-0.0065 0 -0.57965"/>
+
+  <!-- Link 6 Motor -->
+  <xacro:fixed_joint name="link6_motor_joint" 
+                     parent="link5_2" 
+                     child="link6_motor"
+                     xyz="0.0035 0 0.04950" 
+                     rpy="0 0 0"/>
+
+  <xacro:mesh_link name="link6_motor" 
+                   mesh_file="mesh_link6_motor.stl" 
+                   material_name="robot_red"
+                   collision_xyz="-0.01 0 -0.62915"
+                   visual_xyz="-0.01 0 -0.62915"/>
+
+  <!-- Link 6_1 (End Effector) -->
+  <xacro:revolute_joint name="link6_1_joint" 
+                        parent="link6_motor" 
+                        child="link6_1"
+                        xyz="0.002 0 0" 
+                        rpy="0 0 0"
+                        axis="1 0 0"/>
+
+  <xacro:mesh_link name="link6_1" 
+                   mesh_file="mesh_link6_1.stl" 
+                   material_name="robot_purple"
+                   collision_xyz="-0.012 0 -0.62915"
+                   visual_xyz="-0.012 0 -0.62915"/>
+
+</robot>
