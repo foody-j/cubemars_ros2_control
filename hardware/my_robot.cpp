@@ -13,11 +13,11 @@
 // limitations under the License.
 
 // 이전에 정의한 RROBT 헤더 파일 포함
-#include "my_robot_ros2_control/my_robot.hpp"
+#include "include/my_robot_ros2_control/my_robot.hpp"
 
 // CAN 통신 드라이버 헤더 추가
-#include "my_robot_ros2_control/motor_can_driver.hpp" //CAN 통신 클래스 정의된 헤더
-#include "my_robot_ros2_control/motor_data.hpp" // 모터 데이터 객체 정의 헤더
+#include "include/my_robot_ros2_control/motor_can_driver.hpp" //CAN 통신 클래스 정의된 헤더
+#include "include/my_robot_ros2_control/motor_data.hpp" // 모터 데이터 객체 정의 헤더
 
 // 필요한 표준 라이브러리 헤더들 포함
 #include <chrono> // 시간 관련 기능

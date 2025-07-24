@@ -3,7 +3,7 @@
 
     <ros2_control name="my_robot_control" type="system">
         <hardware>
-            <plugin>sfbot_can/MyRobotSystemHardware</plugin>
+            <plugin>my_robot_ros2_control/MyRobotSystemHardware</plugin>
         </hardware>
         
         <!-- Joint 1: Base rotation (Z-axis) -->
