@@ -19,7 +19,7 @@
   </material>
   <material name="robot_yellow">
     <color rgba="0.9 0.9 0.1 1"/>
-  </material>
+    </material>
   <material name="robot_orange">
     <color rgba="1.0 0.5 0.1 1"/>
   </material>
@@ -29,10 +29,8 @@
 
   <!-- Xacro properties for common values -->
   <xacro:property name="mesh_scale" value="0.001 0.001 0.001"/>
-  <xacro:property name="joint_effort" value="0.0"/>
-  <xacro:property name="joint_velocity" value="0.0"/>
-  <xacro:property name="joint_lower_limit" value="-3.14"/>
-  <xacro:property name="joint_upper_limit" value="3.14"/>
+  <!-- Define pi for use in expressions -->
+  <xacro:property name="pi" value="3.14159265359"/>
 
   <!-- Macro for mesh link -->
   <xacro:macro name="mesh_link" params="name mesh_file material_name collision_xyz:='0 0 0' visual_xyz:='0 0 0' collision_geometry:=''">
@@ -46,7 +44,7 @@
           <xacro:if value="${collision_geometry == 'box'}">
             <box size="0.07 0.115 0.015"/>
           </xacro:if>
-          <!-- 필요시 다른 geometry 타입들 추가 -->
+          <!-- Add other geometry types as needed -->
         </geometry>
       </collision>
       <visual name="mesh_${name}">
@@ -60,9 +58,9 @@
   </xacro:macro>
 
   <!-- Macro for revolute joint -->
-  <xacro:macro name="revolute_joint" params="name parent child xyz rpy axis">
+  <xacro:macro name="revolute_joint" params="name parent child xyz rpy axis lower upper velocity effort">
     <joint name="${name}" type="revolute">
-      <limit lower="${joint_lower_limit}" upper="${joint_upper_limit}" effort="${joint_effort}" velocity="${joint_velocity}"/>
+      <limit lower="${lower}" upper="${upper}" effort="${effort}" velocity="${velocity}"/>
       <origin rpy="${rpy}" xyz="${xyz}"/>
       <parent link="${parent}"/>
       <child link="${child}"/>
@@ -110,12 +108,16 @@
                    visual_xyz="0 0 -0.0263"/>
 
   <!-- Link 1_1 -->
-  <xacro:revolute_joint name="link1_1_joint" 
+  <xacro:revolute_joint name="link1_1_joint"                        
                         parent="link1_motor" 
                         child="link1_1"
                         xyz="0 0 0.0507" 
                         rpy="0 0 0"
-                        axis="0 0 1"/>
+                        axis="0 0 1"
+                        lower="${-7.0 * pi / 6.0}" 
+                        upper="${pi / 6.0}"
+                        velocity="${23.0 * 2.0 * pi / 60.0}"
+                        effort="0.0"/>
 
   <xacro:mesh_link name="link1_1" 
                    mesh_file="mesh_link1_1.stl" 
@@ -156,7 +158,11 @@
                         child="link2_1"
                         xyz="0.009 0 0" 
                         rpy="0 0 0"
-                        axis="1 0 0"/>
+                        axis="1 0 0"
+                        lower="${-pi / 2.0}"
+                        upper="${pi / 2.0}"
+                        velocity="${23.0 * 2.0 * pi / 60.0}"
+                        effort="0.0"/>
 
   <xacro:mesh_link name="link2_1" 
                    mesh_file="mesh_link2_1.stl" 
@@ -209,7 +215,11 @@
                         child="link3_1"
                         xyz="0 0 0.03905" 
                         rpy="0 0 0"
-                        axis="0 0 1"/>
+                        axis="0 0 1"
+                        lower="${-23.0 * pi / 18.0}"
+                        upper="${pi / 3.0}"
+                        velocity="${148.0 * 2.0 * pi / 60.0}"
+                        effort="0.0"/>
 
   <xacro:mesh_link name="link3_1" 
                    mesh_file="mesh_link3_1.stl" 
@@ -249,7 +259,11 @@
                         child="link4_1"
                         xyz="-0.0065 0 0" 
                         rpy="0 0 0"
-                        axis="-1 0 0"/>
+                        axis="-1 0 0"
+                        lower="${-19.0 * pi / 36.0}"
+                        upper="${19.0 * pi / 36.0}"
+                        velocity="${148.0 * 2.0 * pi / 60.0}"
+                        effort="0.0"/>
 
   <xacro:mesh_link name="link4_1" 
                    mesh_file="mesh_link4_1.stl" 
@@ -302,7 +316,11 @@
                         child="link5_1"
                         xyz="0 0 0.029" 
                         rpy="0 0 0"
-                        axis="0 0 1"/>
+                        axis="0 0 1"
+                        lower="${-10.0 * pi / 9.0}"
+                        upper="${2.0 * pi / 3.0}"
+                        velocity="${233.0 * 2.0 * pi / 60.0}"
+                        effort="0.0"/>
 
   <xacro:mesh_link name="link5_1" 
                    mesh_file="mesh_link5_1.stl" 
@@ -342,7 +360,11 @@
                         child="link6_1"
                         xyz="0.002 0 0" 
                         rpy="0 0 0"
-                        axis="1 0 0"/>
+                        axis="1 0 0"
+                        lower="${-19.0 * pi / 36.0}"
+                        upper="${19.0 * pi / 36.0}"
+                        velocity="${233.0 * 2.0 * pi / 60.0}"
+                        effort="0.0"/>
 
   <xacro:mesh_link name="link6_1" 
                    mesh_file="mesh_link6_1.stl" 
