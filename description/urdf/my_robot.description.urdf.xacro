@@ -29,9 +29,7 @@
 
   <!-- Xacro properties for common values -->
   <xacro:property name="mesh_scale" value="0.001 0.001 0.001"/>
-  <!-- Define pi for use in expressions -->
-  <xacro:property name="pi" value="3.14159265359"/>
-
+  
   <!-- Macro for mesh link -->
   <xacro:macro name="mesh_link" params="name mesh_file material_name collision_xyz:='0 0 0' visual_xyz:='0 0 0' collision_geometry:=''">
     <link name="${name}">

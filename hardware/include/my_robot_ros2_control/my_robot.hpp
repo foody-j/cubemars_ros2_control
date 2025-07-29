@@ -34,7 +34,15 @@
 // ROS 2 컨트롤 데모 예제 1의 네임스페이스 시작
 namespace my_robot_ros2_control
 {
-  // RRBot 시스템의 위치 제어만을 위한 하드웨어 인터페이스 클래스
+
+// 조인트 제한값을 담을 구조체를 정의.
+struct JointLimits {
+    double min_position{0.0};  // 최소 위치 (라디안)
+    double max_position{0.0};  // 최대 위치 (라디안)
+    
+};
+
+// RRBot 시스템의 위치 제어만을 위한 하드웨어 인터페이스 클래스
 class MyRobotSystemHardware : public hardware_interface::SystemInterface
 {
 
@@ -79,8 +87,10 @@ private:
   double cmd_[6] = {0.0};  // 위치 명령을 저장할 배열
   float velocity_;      // RPM
   float acceleration_;  // RPM/s
-
   MotorData motor_data;
+  // ▼▼▼ 2. JointLimits 구조체 벡터를 멤버 변수로 추가합니다. ▼▼▼
+  // 이 변수에 on_init 단계에서 읽어온 각 조인트의 min/max 값이 저장됩니다.
+  std::vector<JointLimits> hw_joint_limits_;
 
 };
 

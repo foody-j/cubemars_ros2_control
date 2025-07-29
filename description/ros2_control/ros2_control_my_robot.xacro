@@ -10,36 +10,48 @@
         <joint name="link1_1_joint">
             <command_interface name="position"/>
             <state_interface name="position"/>
+            <param name="min">${-7.0 * pi / 6.0}</param>
+            <param name="max">${pi / 6.0}</param>
         </joint>
         
         <!-- Joint 2: Shoulder pitch (X-axis) -->
         <joint name="link2_1_joint">
             <command_interface name="position"/>
             <state_interface name="position"/>
+            <param name="min">${-pi / 2.0}</param>
+            <param name="max">${pi / 2.0}</param>
         </joint>
         
         <!-- Joint 3: Elbow rotation (Z-axis) -->
         <joint name="link3_1_joint">
             <command_interface name="position"/>
             <state_interface name="position"/>
+            <param name="min">${-23.0 * pi / 18.0}</param>
+            <param name="max">${pi / 3.0}</param>
         </joint>
         
         <!-- Joint 4: Wrist pitch (X-axis) -->
         <joint name="link4_1_joint">
             <command_interface name="position"/>
             <state_interface name="position"/>
+            <param name="min">${-19.0 * pi / 36.0}</param>
+            <param name="max">${19.0 * pi / 36.0}</param>
         </joint>
         
         <!-- Joint 5: Wrist rotation (Z-axis) -->
         <joint name="link5_1_joint">
             <command_interface name="position"/>
             <state_interface name="position"/>
+            <param name="min">${-10.0 * pi / 9.0}</param>
+            <param name="max">${2.0 * pi / 3.0}</param>
         </joint>
         
         <!-- Joint 6: End effector rotation (X-axis) -->
         <joint name="link6_1_joint">
             <command_interface name="position"/>
             <state_interface name="position"/>
+            <param name="min">${-19.0 * pi / 36.0}</param>
+            <param name="max">${19.0 * pi / 36.0}</param>
         </joint>
 
     </ros2_control>

@@ -45,32 +45,14 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_init(
   {
     return hardware_interface::CallbackReturn::ERROR;
   }
-  
-  // 하드웨어 파라미터 설정
-  /*
-  cfg_.left_wheel_name = info_.hardware_parameters["left_wheel_name"];  // 왼쪽 바퀴 이름 설정
-  cfg_.right_wheel_name = info_.hardware_parameters["right_wheel_name"];
-  cfg_.loop_rate = std::stof(info_.hardware_parameters["loop_rate"]);
-  cfg_.device = info_.hardware_parameters["device"];
-  cfg_.baud_rate = std::stoi(info_.hardware_parameters["baud_rate"]);
-  cfg_.timeout_ms = std::stoi(info_.hardware_parameters["timeout_ms"]);
-  cfg_.enc_counts_per_rev = std::stoi(info_.hardware_parameters["enc_counts_per_rev"]);
-  */
-  // 일단 이 부분 패스해도 문제 없을 듯. 이미 CAN 에서 초기화 함.
-  else
+  // 조인트 제한값을 저장할 벡터의 크기를 초기화한다.
+  hw_joint_limits_.resize(info.joints.size());
+  // 각 조인트의 정보를 순회하며 설정 및 유효성 검사를 수행합니다.
+  for (uint i = 0; i < info_.joints.size(); ++i)
   {
-    RCLCPP_INFO(rclcpp::get_logger("DiffDriveArduinoHardware"), "PID values not supplied, using defaults.");
-  }
-  
+    const auto& joint = info_.joints[i];
 
-  // wheel_l_.setup(cfg_.left_wheel_name, cfg_.enc_counts_per_rev);
-  // wheel_r_.setup(cfg_.right_wheel_name, cfg_.enc_counts_per_rev);
-
-  // END: This part here is for exemplary purposes - Please do not copy to your production code
-
-  for (const hardware_interface::ComponentInfo & joint : info_.joints)
-  {
-    // RRBotSystemPositionOnly has exactly one state and command interface on each joint
+    // Command 인터페이스가 1개인지 확인
     if (joint.command_interfaces.size() != 1)
     {
       RCLCPP_FATAL(
@@ -79,99 +61,97 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_init(
       return hardware_interface::CallbackReturn::ERROR;
     }
 
+    // Command 인터페이스가 'position' 타입인지 확인
     if (joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
     {
       RCLCPP_FATAL(
-        get_logger(), "Joint '%s' have %s command interfaces found. '%s' expected.",
+        get_logger(), "Joint '%s' has '%s' command interface. '%s' expected.",
         joint.name.c_str(), joint.command_interfaces[0].name.c_str(),
         hardware_interface::HW_IF_POSITION);
       return hardware_interface::CallbackReturn::ERROR;
     }
 
+    // State 인터페이스가 1개인지 확인
     if (joint.state_interfaces.size() != 1)
     {
       RCLCPP_FATAL(
-        get_logger(), "Joint '%s' has %zu state interface. 1 expected.", joint.name.c_str(),
+        get_logger(), "Joint '%s' has %zu state interfaces. 1 expected.", joint.name.c_str(),
         joint.state_interfaces.size());
       return hardware_interface::CallbackReturn::ERROR;
     }
 
+    // State 인터페이스가 'position' 타입인지 확인
     if (joint.state_interfaces[0].name != hardware_interface::HW_IF_POSITION)
     {
       RCLCPP_FATAL(
-        get_logger(), "Joint '%s' have %s state interface. '%s' expected.", joint.name.c_str(),
-        joint.state_interfaces[0].name.c_str(), hardware_interface::HW_IF_POSITION);
+        get_logger(), "Joint '%s' has '%s' state interface. '%s' expected.",
+        joint.name.c_str(), joint.state_interfaces[0].name.c_str(), hardware_interface::HW_IF_POSITION);
       return hardware_interface::CallbackReturn::ERROR;
     }
+
+    // ▼▼▼ 2. URDF의 <param> 태그에서 min/max 값을 읽어옵니다. ▼▼▼
+    try
+    {
+      hw_joint_limits_[i].min_position = std::stod(joint.parameters.at("min"));
+      hw_joint_limits_[i].max_position = std::stod(joint.parameters.at("max"));
+    }
+    catch (const std::out_of_range &ex)
+    {
+      RCLCPP_FATAL(get_logger(), "Joint '%s' has no min/max limits specified in URDF!", joint.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+    catch (const std::invalid_argument &ex)
+    {
+      RCLCPP_FATAL(get_logger(), "Joint '%s' min/max limits are not valid numbers!", joint.name.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    // 읽어온 제한값을 로그로 출력하여 확인
+    RCLCPP_INFO(
+      get_logger(), "Joint '%s' limits loaded: min=%.3f, max=%.3f",
+      joint.name.c_str(), hw_joint_limits_[i].min_position, hw_joint_limits_[i].max_position);
   }
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-/*
+// 이 함수는 ros2_control 프레임워크에 이 하드웨어의 어떤 '상태(state)'를 외부에 공개할지 알려주는 역할을 합니다.
+// '상태'란 모터 엔코더에서 읽어온 현재 위치, 속도 등 로봇의 실제 값을 의미합니다.
 std::vector<hardware_interface::StateInterface> MyRobotSystemHardware::export_state_interfaces()
 {
-  std::vector<hardware_interface::StateInterface> state_interfaces;
-
-  state_interfaces.emplace_back(hardware_interface::StateInterface(
-  "ak70-10-v1_1_continuous", hardware_interface::HW_IF_POSITION, &pos_[0]));
-  //state_interfaces.emplace_back(hardware_interface::StateInterface(
-  //"ak70-10-v1_1_continuous", hardware_interface::HW_IF_VELOCITY, &wheel_l_.vel));
-
-  //state_interfaces.emplace_back(hardware_interface::StateInterface(
-  //  wheel_r_.name, hardware_interface::HW_IF_POSITION, &wheel_r_.pos));
-  //state_interfaces.emplace_back(hardware_interface::StateInterface(
-  //wheel_r_.name, hardware_interface::HW_IF_VELOCITY, &wheel_r_.vel));
-
-  return state_interfaces;
-}
-// 위치 명령 인터페이스
-std::vector<hardware_interface::CommandInterface> MyRobotSystemHardware::export_command_interfaces()
-{
-  std::vector<hardware_interface::CommandInterface> command_interfaces;
-
-  command_interfaces.emplace_back(hardware_interface::CommandInterface(
-    "ak70-10-v1_1_continuous", hardware_interface::HW_IF_POSITION, &cmd_[0]));
-  //command_interfaces.emplace_back(hardware_interface::CommandInterface(
-  //wheel_r_.name, hardware_interface::HW_IF_VELOCITY, &wheel_r_.cmd));
-
-  return command_interfaces;
-}*/
-
-// 멤버 함수로 정확히 정의 - 실제 로봇 조인트 이름에 맞게 수정
-std::vector<hardware_interface::StateInterface> MyRobotSystemHardware::export_state_interfaces()
-{
+    // 공개할 상태 인터페이스들을 담을 벡터를 생성합니다.
     std::vector<hardware_interface::StateInterface> state_interfaces;
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        "link1_1_joint", hardware_interface::HW_IF_POSITION, &pos_[0]));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        "link2_1_joint", hardware_interface::HW_IF_POSITION, &pos_[1]));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        "link3_1_joint", hardware_interface::HW_IF_POSITION, &pos_[2]));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        "link4_1_joint", hardware_interface::HW_IF_POSITION, &pos_[3]));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        "link5_1_joint", hardware_interface::HW_IF_POSITION, &pos_[4]));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        "link6_1_joint", hardware_interface::HW_IF_POSITION, &pos_[5]));
+    // URDF에 정의된 모든 조인트에 대해 루프를 실행한다.
+    for (uint i = 0; i < info_.joints.size(); i++)
+    {
+        // 벡터에 새로운 상태 인터페이스를 추가한다.
+        state_interfaces.emplace_back(hardware_interface::StateInterface(
+            info_.joints[i].name, hardware_interface::HW_IF_POSITION, &pos_[i]));
+    }
+    // 첫번째 인자: 조인트 이름 (예: "link1_1_joint")
+    // 이 이름을 통ㄴ해 joint_state_broadcaster가 이 조인트의 상태를 구독할 수 있습니다.
+    // 두번째 인자: 상태 인터페이스 타입 (예: "position")
+    // 세 번째 인자: 실제 데이터가 저장될 변수의 주소.
+    // read() 함수가 모터에서 읽어온 위치 값을 pos_[i]에 저장하면,
+    // ros2_control 프레임워크는 이 주소를 통해 그 값을 읽어갈 수 있습니다.
+    // 설정이 완료된 상태 인터페이스 목록을 반환합니다.
+
     return state_interfaces;
 }
 
+
+// 이 함수는 ros2_control 프레임워크에 이 하드웨어가 어떤 '명령(command)'을 수신할 수 있는지 알려주는 역할을 합니다.
+// '명령'이란 JointTrajectoryController 등 상위 컨트롤러로부터 전달받는 목표 위치, 속도 등을 의미합니다.
 std::vector<hardware_interface::CommandInterface> MyRobotSystemHardware::export_command_interfaces()
 {
+    // 공개할 명령 인터페이스들을 담을 벡터를 생성합니다.
     std::vector<hardware_interface::CommandInterface> command_interfaces;
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        "link1_1_joint", hardware_interface::HW_IF_POSITION, &cmd_[0]));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        "link2_1_joint", hardware_interface::HW_IF_POSITION, &cmd_[1]));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        "link3_1_joint", hardware_interface::HW_IF_POSITION, &cmd_[2]));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        "link4_1_joint", hardware_interface::HW_IF_POSITION, &cmd_[3]));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        "link5_1_joint", hardware_interface::HW_IF_POSITION, &cmd_[4]));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        "link6_1_joint", hardware_interface::HW_IF_POSITION, &cmd_[5]));
+    // URDF에 정의된 모든 조인트에 대해 루프를 실행합니다.
+    for (uint i = 0; i < info_.joints.size(); i++)
+    {
+        command_interfaces.emplace_back(hardware_interface::CommandInterface(
+            info_.joints[i].name, hardware_interface::HW_IF_POSITION, &cmd_[i]));
+    }
     return command_interfaces;
 }
 
@@ -212,12 +192,17 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
     if (!can_driver.connected()) {
         can_driver.connect();
     }
-    
+
     // 원점 설정 전에 연결 확인
     if (!can_driver.connected()) {
         RCLCPP_ERROR(get_logger(), "Failed to connect to CAN bus");
         return hardware_interface::CallbackReturn::ERROR;
     }
+
+    // 활성화 시 모터가 준비될 시간을 줍니다.
+    RCLCPP_INFO(get_logger(), "Waiting for motors to be ready...");
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
     /*
     if (can_driver.initialize_motor_origin(1)) {
       RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
@@ -293,6 +278,9 @@ hardware_interface::return_type MyRobotSystemHardware::read(
       // pos_[i-1] = motor_data.position;
       pos_[i-1] = motor_data.position * M_PI / 180.0;  // degree를 radian으로 변환
       spd_[i-1] = motor_data.speed;
+
+      // 너무 많은 로그를 방지하기 위해 read에서는 로그 출력을 주석 처리하거나, 디버깅 시에만 활성화합니다.
+      /*
       
       std::cout << std::dec;  // 10진수 모드로 명시적 설정
       std::cout << "Motor " << static_cast<int>(motor_data.motor_id) << ": "
@@ -302,6 +290,7 @@ hardware_interface::return_type MyRobotSystemHardware::read(
           << "Temperature: " << static_cast<int>(motor_data.temperature) << "°C "
           << "Error: 0x" << std::hex << static_cast<int>(motor_data.error) 
           << std::dec << std::endl;
+          */
   }
 
   return hardware_interface::return_type::OK;
@@ -321,32 +310,30 @@ hardware_interface::return_type MyRobotSystemHardware::write(
     
     float limited_velocity = std::min(velocity_, MAX_VELOCITY);
     float limited_acceleration = std::min(acceleration_, MAX_ACCELERATION);
-    
-    // radian to degree 변환
-    double degree1 = cmd_[0] * 180.0 / M_PI;
-    can_driver.write_position_velocity(1, degree1, limited_velocity, limited_acceleration);
 
-    double degree2 = cmd_[1] * 180.0 / M_PI;
-    can_driver.write_position_velocity(2, degree2, limited_velocity, limited_acceleration);
+    // for 루프를 사용하여 모든 조인트에 제한을 적용하고 명령을 전송합니다.
+    for (uint i =0; i < 6; ++i)
+    {
+        // 컨트롤러부터 받은 명령에 조인트 제한을 적용합니다.
+        double clamped_command_rad = std::clamp(
+          cmd_[i],
+          hw_joint_limits_[i].min_position,
+          hw_joint_limits_[i].max_position
+        );
+        // 조인트 제한을 적용한 명령을 모터가 사용하는 단위로 변환한다
+        double command_deg = clamped_command_rad * 180.0 / M_PI; // radian to degree 변환
 
-    double degree3 = cmd_[2] * 180.0 / M_PI;
-    can_driver.write_position_velocity(3, degree3, limited_velocity, limited_acceleration);
-
-    double degree4 = cmd_[3] * 180.0 / M_PI;
-    can_driver.write_position_velocity(4, degree4, limited_velocity, limited_acceleration);
-
-    double degree5 = cmd_[4] * 180.0 / M_PI;
-    can_driver.write_position_velocity(5, degree5, limited_velocity, limited_acceleration);
-
-    double degree6 = cmd_[5] * 180.0 / M_PI;
-    can_driver.write_position_velocity(6, degree6, limited_velocity, limited_acceleration);
+        // 최종 값읋 CAN 드라이버에 전송한다 (모터 ID는 1부터 시작하므로 i+1 사용)
+        can_driver.write_position_velocity(i + 1, command_deg, limited_velocity, limited_acceleration);
+    }
     
     // 디버그 출력 (필요시)
+    /*
     static int debug_counter = 0;
     if (++debug_counter % 100 == 0) {  // 1초마다 출력
         RCLCPP_INFO(get_logger(), "Velocity: %.1f RPM, Acceleration: %.1f RPM/s", 
                    limited_velocity, limited_acceleration);
-    }
+    }*/
   }
   catch (const std::exception& e) {
       RCLCPP_ERROR(rclcpp::get_logger("MyRobotSystemHardware"), "Failed to write command: %s", e.what());
