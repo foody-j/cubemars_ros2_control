@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro"  name="my_robot">
     <xacro:include filename="$(find my_robot_ros2_control)/description/ros2_control/ros2_control_my_robot.xacro" />
-    <xacro:include filename="$(find my_robot_ros2_control)/description/urdf/my_robot.description.urdf.xacro" />
+    <xacro:include filename="$(find my_robot_ros2_control)/description/urdf/my_robot_with_nozzle.description.urdf.xacro" />
 
 </robot>

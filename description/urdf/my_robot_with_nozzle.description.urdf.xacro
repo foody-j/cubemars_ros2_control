@@ -1,0 +1,213 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="my_robot">
+
+  <!-- Material Definitions -->
+  <material name="robot_black">
+    <color rgba="0.2 0.2 0.2 1"/>
+  </material>
+  <material name="robot_white">
+    <color rgba="0.9 0.9 0.9 1"/>
+  </material>
+  <material name="robot_red">
+    <color rgba="0.8 0.2 0.2 1"/>
+  </material>
+  <material name="robot_blue">
+    <color rgba="0.2 0.4 0.8 1"/>
+  </material>
+  <material name="robot_green">
+    <color rgba="0.2 0.8 0.2 1"/>
+  </material>
+  <material name="robot_yellow">
+    <color rgba="0.9 0.9 0.1 1"/>
+  </material>
+  <material name="robot_orange">
+    <color rgba="1.0 0.5 0.1 1"/>
+  </material>
+  <material name="robot_purple">
+    <color rgba="0.6 0.2 0.8 1"/>
+  </material>
+
+  <!-- Properties -->
+  <xacro:property name="mesh_scale" value="1.0 1.0 1.0"/>
+
+  <!-- Macros -->
+  <xacro:macro name="mesh_link" params="name mesh_file material_name">
+    <link name="${name}">
+      <collision>
+        <origin 
+          xyz="0 0 0" 
+          rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://my_robot_ros2_control/description/urdf/meshes/${mesh_file}" scale="${mesh_scale}"/>
+        </geometry>
+      </collision>
+      <visual>
+        <material name="${material_name}"/>
+        <origin 
+          xyz="0 0 0" 
+          rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://my_robot_ros2_control/description/urdf/meshes/${mesh_file}" scale="${mesh_scale}"/>
+        </geometry>
+      </visual>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="revolute_joint" params="name parent child xyz rpy axis lower upper velocity effort">
+    <joint name="${name}" type="revolute">
+      <limit lower="${lower}" upper="${upper}" effort="${effort}" velocity="${velocity}"/>
+      <origin 
+        xyz="${xyz}" 
+        rpy="${rpy}"/>
+      <parent link="${parent}"/>
+      <child link="${child}"/>
+      <axis xyz="${axis}"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="fixed_joint" params="name parent child xyz rpy">
+    <joint name="${name}" type="fixed">
+      <origin 
+        xyz="${xyz}" 
+        rpy="${rpy}"/>
+      <parent link="${parent}"/>
+      <child link="${child}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- World Link -->
+  <link name="world"/>
+
+  <!-- Base Joint and Link -->
+  <joint name="base_joint" type="fixed">
+    <origin 
+      xyz="0 0 0" 
+      rpy="0 0 0"/>
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+  <xacro:mesh_link name="base_link" mesh_file="mesh_base_link.stl" material_name="robot_black"/>
+
+  <!-- Link 1 Components -->
+  <xacro:fixed_joint name="link1_motor_joint" parent="base_link" child="link1_motor" 
+    xyz="0 0 0.0263" rpy="0 0 0"/>
+  <xacro:mesh_link name="link1_motor" mesh_file="mesh_AK80-64_1.stl" material_name="robot_red"/>
+
+  <xacro:revolute_joint name="link1_1_joint" parent="link1_motor" child="link1_1"
+    xyz="0 0 0.0507" rpy="0 0 0" axis="0 0 1"
+    lower="${-7.0 * pi / 6.0}" upper="${pi / 6.0}" velocity="${23.0 * 2.0 * pi / 60.0}" effort="0"/>
+  <xacro:mesh_link name="link1_1" mesh_file="mesh_link1_1.stl" material_name="robot_blue"/>
+
+  <xacro:fixed_joint name="link1_2_joint" parent="link1_1" child="link1_2" 
+    xyz="0 0 0.015" rpy="0 0 0"/>
+  <xacro:mesh_link name="link1_2" mesh_file="mesh_link1_2.stl" material_name="robot_white"/>
+
+  <!-- Link 2 Components -->
+  <xacro:fixed_joint name="link2_motor_joint" parent="link1_2" child="link2_motor" 
+    xyz="0 0 0.059" rpy="0 0 0"/>
+  <xacro:mesh_link name="link2_motor" mesh_file="mesh_AK80-64_2.stl" material_name="robot_red"/>
+
+  <xacro:revolute_joint name="link2_1_joint" parent="link2_motor" child="link2_1"
+    xyz="0.009 0 0" rpy="0 0 0" axis="1 0 0"
+    lower="${-pi / 2.0}" upper="${pi / 2.0}" velocity="${23.0 * 2.0 * pi / 60.0}" effort="0"/>
+  <xacro:mesh_link name="link2_1" mesh_file="mesh_link2_1.stl" material_name="robot_green"/>
+
+  <xacro:fixed_joint name="link2_2_joint" parent="link2_1" child="link2_2" 
+    xyz="0.015 0 0" rpy="0 0 0"/>
+  <xacro:mesh_link name="link2_2" mesh_file="mesh_link2_PLA.stl" material_name="robot_white"/>
+
+  <xacro:fixed_joint name="link2_3_joint" parent="link2_2" child="link2_3" 
+    xyz="0.075 0 0.13" rpy="0 0 0"/>
+  <xacro:mesh_link name="link2_3" mesh_file="mesh_link2_7.stl" material_name="robot_yellow"/>
+
+  <!-- Link 3 Components -->
+  <xacro:fixed_joint name="link3_motor_joint" parent="link2_3" child="link3_motor" 
+    xyz="0 0 0.021" rpy="0 0 0"/>
+  <xacro:mesh_link name="link3_motor" mesh_file="mesh_AK70-10_1.stl" material_name="robot_red"/>
+
+  <xacro:revolute_joint name="link3_1_joint" parent="link3_motor" child="link3_1"
+    xyz="0 0 0.03905" rpy="0 0 0" axis="0 0 1"
+    lower="${-23.0 * pi / 18.0}" upper="${pi / 3.0}" velocity="${148.0 * 2.0 * pi / 60.0}" effort="0"/>
+  <xacro:mesh_link name="link3_1" mesh_file="mesh_link3_1.stl" material_name="robot_orange"/>
+
+  <xacro:fixed_joint name="link3_2_joint" parent="link3_1" child="link3_2" 
+    xyz="0 0 0.015" rpy="0 0 0"/>
+  <xacro:mesh_link name="link3_2" mesh_file="mesh_link3_2.stl" material_name="robot_purple"/>
+
+  <!-- Link 4 Components -->
+  <xacro:fixed_joint name="link4_motor_joint" parent="link3_2" child="link4_motor" 
+    xyz="0.004 0 0.0546" rpy="0 0 0"/>
+  <xacro:mesh_link name="link4_motor" mesh_file="mesh_AK70-10_2.stl" material_name="robot_red"/>
+
+  <xacro:revolute_joint name="link4_1_joint" parent="link4_motor" child="link4_1"
+    xyz="-0.0065 0 0" rpy="0 0 0" axis="-1 0 0"
+    lower="${-19.0 * pi / 36.0}" upper="${19.0 * pi / 36.0}" velocity="${148.0 * 2.0 * pi / 60.0}" effort="0"/>
+  <xacro:mesh_link name="link4_1" mesh_file="mesh_link4_1.stl" material_name="robot_blue"/>
+
+  <xacro:fixed_joint name="link4_2_joint" parent="link4_1" child="link4_2" 
+    xyz="-0.015 0 0" rpy="0 0 0"/>
+  <xacro:mesh_link name="link4_2" mesh_file="mesh_link4_PLA.stl" material_name="robot_white"/>
+
+  <xacro:fixed_joint name="link4_3_joint" parent="link4_2" child="link4_3" 
+    xyz="-0.075 0 0.1" rpy="0 0 0"/>
+  <xacro:mesh_link name="link4_3" mesh_file="mesh_link4_7.stl" material_name="robot_green"/>
+
+  <!-- Link 5 Components -->
+  <xacro:fixed_joint name="link5_motor_joint" parent="link4_3" child="link5_motor" 
+    xyz="0 0 0.02" rpy="0 0 0"/>
+  <xacro:mesh_link name="link5_motor" mesh_file="mesh_AK60-6_1.stl" material_name="robot_red"/>
+
+  <xacro:revolute_joint name="link5_1_joint" parent="link5_motor" child="link5_1"
+    xyz="0 0 0.029" rpy="0 0 0" axis="0 0 1"
+    lower="${-10.0 * pi / 9.0}" upper="${2.0 * pi / 3.0}" velocity="${233.0 * 2.0 * pi / 60.0}" effort="0"/>
+  <xacro:mesh_link name="link5_1" mesh_file="mesh_link5_1.stl" material_name="robot_yellow"/>
+
+  <xacro:fixed_joint name="link5_2_joint" parent="link5_1" child="link5_2" 
+    xyz="0 0 0.02" rpy="0 0 0"/>
+  <xacro:mesh_link name="link5_2" mesh_file="mesh_link5_2.stl" material_name="robot_orange"/>
+
+  <!-- Link 6 Components -->
+  <xacro:fixed_joint name="link6_motor_joint" parent="link5_2" child="link6_motor" 
+    xyz="0.0035 0 0.0495" rpy="0 0 0"/>
+  <xacro:mesh_link name="link6_motor" mesh_file="mesh_AK60-6_2.stl" material_name="robot_red"/>
+
+  <xacro:revolute_joint name="link6_1_joint" parent="link6_motor" child="link6_1"
+    xyz="0.002 0 0" rpy="0 0 0" axis="1 0 0"
+    lower="${-19.0 * pi / 36.0}" upper="${19.0 * pi / 36.0}" velocity="${233.0 * 2.0 * pi / 60.0}" effort="0"/>
+  <xacro:mesh_link name="link6_1" mesh_file="mesh_link6_1.stl" material_name="robot_purple"/>
+
+  <!-- Tool Components -->
+  <xacro:fixed_joint name="tool0_joint" parent="link6_1" child="tool0" 
+    xyz="0.023 0 0" rpy="0 0 0"/>
+  <xacro:mesh_link name="tool0" mesh_file="mesh_tool0.stl" material_name="robot_purple"/>
+
+  <xacro:fixed_joint name="tool_nozzle_joint" parent="tool0" child="tool_nozzle" 
+    xyz="0.005 0 0" rpy="0 0 0"/>
+
+  <link name="tool_nozzle">
+    <visual>
+      <material name="robot_black"/>
+      <origin 
+        xyz="0 0 0" 
+        rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://my_robot_ros2_control/description/urdf/meshes/mesh_tool_nozzle.stl" scale="${mesh_scale}"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin 
+        xyz="0.0175 0 -0.0025" 
+        rpy="0 1.5708 0"/>
+      <geometry>
+        <box size="0.035 0.05 0.05"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- 실제 작업 끝점 정의-->
+  <!-- 0.075, 0 629.15-->
+  <xacro:fixed_joint name="tcp_joint" parent="tool_nozzle" child="tcp" 
+  xyz="0.035 0 0" rpy="0 0 0"/>
+  <link name="tcp"/>
+
+</robot>
