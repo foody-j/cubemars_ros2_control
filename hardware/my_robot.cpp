@@ -206,10 +206,14 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
     // 모터 원점 설정을 위한 루프
     for (uint8_t i = 1; i < 7; i++) {
       can_driver.write_set_origin(i, false); // 모터 원점 설정 명령
-      std::this_thread::sleep_for(std::chrono::milliseconds(500)); // 500ms 대기
+      std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 500ms 대기
       RCLCPP_INFO(get_logger(), "Motor %d origin set command sent", i);
     }
 
+    if (can_driver.initialize_motor_origin_duty_cycle(1, 0.04f, 0.3f, 10)) {
+      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     /*
     if (can_driver.initialize_motor_origin(1)) {
       RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");

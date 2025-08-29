@@ -1,5 +1,5 @@
-#ifndef MOTOR_CAN_DRIVER_HPP
-#define MOTOR_CAN_DRIVER_HPP
+#ifndef MOTOR_CAN_DRIVER_TEST_HPP
+#define MOTOR_CAN_DRIVER_TEST_HPP
 
 #include <string>
 #include <iostream>
@@ -153,6 +153,34 @@ public:
     }
 
     // 모터 명령 메서드들 (기존 코드와 유사하지만 모터 ID에 따라 적절한 CAN 인터페이스 선택)
+
+    void write_duty_cycle(uint8_t driver_id, float duty) {
+        if (driver_id < 1 || driver_id > MAX_MOTORS) {
+            throw std::runtime_error("Invalid motor ID");
+        }
+        
+        // 모터 명령 업데이트
+        std::lock_guard<std::mutex> lock(command_mutex_);
+        motor_commands_[driver_id - 1].motor_id = driver_id;
+        motor_commands_[driver_id - 1].duty = duty; // duty_cycle은 현재로 처리
+        motor_commands_[driver_id - 1].active = true;
+        motor_commands_[driver_id - 1].command_type = CommandType::DUTY;
+        motor_commands_[driver_id - 1].last_sent = std::chrono::steady_clock::now();
+    }
+
+    void write_current(uint8_t driver_id, float current_A) {
+        if (driver_id < 1 || driver_id > MAX_MOTORS) {
+            throw std::runtime_error("Invalid motor ID");
+        }
+        
+        // 모터 명령 업데이트
+        std::lock_guard<std::mutex> lock(command_mutex_);
+        motor_commands_[driver_id - 1].motor_id = driver_id;
+        motor_commands_[driver_id - 1].current = current_A;
+        motor_commands_[driver_id - 1].active = true;
+        motor_commands_[driver_id - 1].command_type = CommandType::CURRENT; // 현재는 속도 모드로 처리
+        motor_commands_[driver_id - 1].last_sent = std::chrono::steady_clock::now();
+    }
     void write_velocity(uint8_t driver_id, float rpm) {
         if (driver_id <1 || driver_id > MAX_MOTORS) {
             throw std::runtime_error("Invalid motor ID");
@@ -210,6 +238,72 @@ public:
         return motor_manager_;
     }
 
+    // 새로운 듀티 사이클 기반 원점 초기화 함수
+    bool initialize_motor_origin_duty_cycle(uint8_t driver_id, float duty_cycle = -0.04f,
+                                            float speed_threshold = 0.5f, int timeout_seconds = 10) {
+        auto TIMEOUT_DURATION = std::chrono::seconds(timeout_seconds);
+
+        if (driver_id < 1 || driver_id > MAX_MOTORS) {
+            throw std::runtime_error("Invalid motor ID");
+        }
+
+        // 상태를 관리하기 위한 변수
+        enum class HomingState { WATING_FOR_MOVEMENT, WAITING_FOR_STOP };
+        HomingState state = HomingState::WATING_FOR_MOVEMENT;
+        try {
+            std::cout << "듀티 사이클 기반 원점 탐색 시작 (모터 " << static_cast<int>(driver_id)
+                      << ", 탐색 듀티 사이클: " << duty_cycle << ")\n";
+            
+            // 초기 정지
+            write_duty_cycle(driver_id, 0.0f);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+            // 원점 탐색 시작
+            write_duty_cycle(driver_id, duty_cycle);
+
+            // 원점 감지 대기
+            auto start_time = std::chrono::steady_clock::now();
+
+            while (std::chrono::steady_clock::now() - start_time < TIMEOUT_DURATION) {
+                // 개선점: 직접 CAN을 읽지 않고 백그라운드 스레드가 갱신해주는 최신 데이터 사용
+                MotorData data = getMotorData(driver_id);
+                
+                // [1단계] 모터가 움직이기 시작했는지 확인
+                if (state == HomingState::WATING_FOR_MOVEMENT) {
+                    if (std::abs(data.speed) > speed_threshold) {
+                        std::cout << "모터 움직임 감지됨. 이제 정지를 대기합니다... (현재 속도: " 
+                        << data.speed << " RPM)\n";
+                        state = HomingState::WAITING_FOR_STOP; // 상태를 정지 대기로 변경
+                    }
+                }
+                // [2단계] 모터가 정지했는지 확인
+                else if (state == HomingState::WAITING_FOR_STOP) {
+                    if (std::abs(data.speed) < speed_threshold) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 안정성을 위해 짧은 시간 대기
+                        data = getMotorData(driver_id); // 다시 한번 최신 데이터 확인
+                        if (std::abs(data.speed) < speed_threshold) {
+                            std::cout << "원점 감지됨 (속도: " << data.speed << " RPM)\n";
+                        write_set_origin(driver_id, false);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        write_duty_cycle(driver_id, 0.0f);
+                        return true;
+                        }
+                    }
+                }    
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            std::cout << "원점 초기화 시간 초과\n";
+            write_duty_cycle(driver_id, 0.0f); // 안전을 위해 모터 정지
+            return false;
+
+        } catch (const std::exception& e) {
+            std::cerr << "원점 초기화 실패: " << e.what() << "\n";
+            write_duty_cycle(driver_id, 0.0f); // 안전을 위해 모터 정지
+            return false;
+        }
+    }
+    
+    
     // 원점 초기화 함수 - 임계 토크 파라미터화
     bool initialize_motor_origin(uint8_t driver_id, float current_threshold = 0.4f,
                                  float search_speed = -2.0f, int timeout_seconds = 5) {
@@ -227,15 +321,6 @@ public:
         try {
             std::cout << "원점 탐색 시작 (모터 " << static_cast<int>(driver_id)
                       << ", 임계 전류: " << current_threshold << "A(\n";
-
-            // 1. 초기 정지
-            write_velocity(driver_id, 0.0f);
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            // 2. 원점 탐색 시작
-            write_velocity(driver_id, search_speed);
-
-            // 3. 원점 감지 대기
             auto start_time = std::chrono::steady_clock::now();
             struct can_frame frame;
 
@@ -246,7 +331,7 @@ public:
                         // 위치 값 확인 
                         int16_t position_raw = (frame.data[0] << 8) | frame.data[1];
                         float position = position_raw * 0.1f;
-                        // 전류 값 확인
+                        // 전류 값 확인VELOCITY
                         int16_t current_raw = (frame.data[4] << 8) | frame.data[5];
                         float current = current_raw * 0.01f;
 
@@ -295,6 +380,8 @@ private:
 
     // 명령 타입 열거형
     enum class CommandType {
+        DUTY,
+        CURRENT,
         VELOCITY,
         POSITION_VELOCITY,
         SET_ORIGIN
@@ -303,6 +390,8 @@ private:
     // 모터 명령 구조체
     struct MotorCommand {
         uint8_t motor_id;
+        float duty;  // duty_cycle mode에서 사용
+        float current; // current mode에서 사용
         float value;  // velocity mode에서 사용
         float position;  // position-velocity mode에서 사용
         float velocity;  // position-velocity mode에서 사용
@@ -315,7 +404,7 @@ private:
         bool try_all_interfaces; // 모든 인터페이스에 명령 시도
         
         MotorCommand() : motor_id(0), value(0), position(0), velocity(0), 
-                        acceleration(0), active(false), 
+                        acceleration(0), active(false), current(0),
                         command_type(CommandType::VELOCITY),
                         try_all_interfaces(true) {} // 기본적으로 true로 설정 {}
     };
@@ -327,7 +416,7 @@ private:
         try {
             // 1. CAN 인터페이스를 내린다
             std::stringstream ss;
-            ss << "sudo ip link set " << can_name <<" down";
+            ss << "ip link set " << can_name <<" down";
             int result = std::system(ss.str().c_str());
             if (result <0) {
                 throw std::runtime_error("Failed to set CAN interface down");
@@ -335,7 +424,7 @@ private:
 
             // 2. bitrate 설정
             ss.str("");
-            ss << "sudo ip link set " << can_name <<" type can bitrate " << bitrate;
+            ss << "ip link set " << can_name <<" type can bitrate " << bitrate;
             result = std::system(ss.str().c_str());
             if (result < 0) {
                 throw std::runtime_error("Failed to set CAN bitrate");
@@ -343,7 +432,7 @@ private:
 
             // 3. CAN 인터페이스를 올린다이렇게 하면 모터가 아직 매핑되지 않았더라도 명령을 받을 수 있고, 응답하면 자동으로 매핑이 설정되어 이후에는 해당 인터페이스로만 통신하게 됩니다.
             ss.str("");
-            ss << "sudo ip link set " << can_name <<" up";
+            ss << "ip link set " << can_name <<" up";
             result = std::system(ss.str().c_str());
             if (result <0) {
                 throw std::runtime_error("Failed to set CAN interface up");
@@ -408,7 +497,7 @@ private:
             
             // 인터페이스 다운
             std::stringstream ss;
-            ss << "sudo ip link set " <<interface.name << " down";
+            ss << "ip link set " <<interface.name << " down";
             std::system(ss.str().c_str());
             
             interface.is_connected = false;
@@ -586,6 +675,18 @@ private:
                             frame.data[6] = (acc >> 8) & 0xFF;
                             frame.data[7] = acc & 0xFF;
                             
+                        } else if (cmd_copy.command_type == CommandType::DUTY) {
+                            uint32_t control_mode = 0;  // Duty Cycle Mode
+                            uint32_t id = (control_mode << 8) | cmd_copy.motor_id;
+
+                            int32_t duty_cycle = static_cast<int32_t>(cmd_copy.duty * 100000.0f); 
+
+                            frame.can_id = id | CAN_EFF_FLAG;
+                            frame.can_dlc = 4;
+                            frame.data[0] = (duty_cycle >> 24) & 0xFF;
+                            frame.data[1] = (duty_cycle >> 16) & 0xFF;
+                            frame.data[2] = (duty_cycle >> 8) & 0xFF;
+                            frame.data[3] = duty_cycle & 0xFF;
                         } else if (cmd_copy.command_type == CommandType::SET_ORIGIN) {
                             uint32_t control_mode = 5;  // Set Origin Mode
                             uint32_t id = (control_mode << 8) | cmd_copy.motor_id;
@@ -593,13 +694,29 @@ private:
                             frame.can_id = id | CAN_EFF_FLAG;
                             frame.can_dlc = 1;
                             frame.data[0] = cmd_copy.is_permanent ? 1 : 0;
+                        } else if (cmd_copy.command_type == CommandType::CURRENT) {
+                            uint32_t control_mode = 1;  // Current Mode
+                            uint32_t id = (control_mode << 8) | cmd_copy.motor_id;
+                            
+                            int32_t current_mA = static_cast<int32_t>(cmd_copy.current * 1000.0f);  // mA 단위로 변환
+
+                            frame.can_id = id | CAN_EFF_FLAG;
+                            frame.can_dlc = 4;
+                            frame.data[0] = (current_mA >> 24) & 0xFF;
+                            frame.data[1] = (current_mA >> 16) & 0xFF;
+                            frame.data[2] = (current_mA >> 8) & 0xFF;
+                            frame.data[3] = current_mA & 0xFF;
+                        } else {
+                            std::cerr << "Unknown command type for motor " 
+                                    << static_cast<int>(cmd_copy.motor_id) << std::endl;
+                            continue; // 알 수 없는 명령 타입은 건너뜀
                         }
                         
                         // 매핑된 인터페이스가 있으면 해당 인터페이스로만 전송
                         if (can_idx >= 0 && can_idx < MAX_CAN_INTERFACES && 
                             can_interfaces_[can_idx].is_connected) {
     
-                            // 기존 디버깅 로그는 주석 처리
+                            // 기존 디버깅 로그는 주석 처리 
                             // std::cout << "*** DEBUG CAN Motor " << static_cast<int>(cmd_copy.motor_id)
                             //         << ": ID=0x" << std::hex << frame.can_id
                             //         << ", DLC=" << std::dec << (int)frame.can_dlc
@@ -620,7 +737,7 @@ private:
                             
                             // 필요시 간단한 출력만 남기기
                             if (result != sizeof(struct can_frame)) {
-                                std::cout << "⚠️  CAN write error: " << result << " bytes" << std::endl;
+                                 // std::cout << "⚠️  CAN write error: " << result << " bytes" << std::endl;
                             }
                             
                         }
@@ -645,8 +762,8 @@ private:
                                     
                                     // 에러시에만 출력
                                     if (result != sizeof(struct can_frame)) {
-                                        std::cout << "⚠️  CAN write error to " << can_interfaces_[j].name 
-                                                 << ": " << result << " bytes" << std::endl;
+                                         // std::cout << "⚠️  CAN write error to " << can_interfaces_[j].name 
+                                            //      << ": " << result << " bytes" << std::endl;
                                     }
                                 }
                             }
