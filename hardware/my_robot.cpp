@@ -214,45 +214,6 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    /*
-    if (can_driver.initialize_motor_origin(1)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      can_driver.write_position_velocity(1, 0.0, velocity_, acceleration_);
-    }
-
-    if (can_driver.initialize_motor_origin(2)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      can_driver.write_position_velocity(2, 0.0, velocity_, acceleration_);
-    }
-
-    if (can_driver.initialize_motor_origin(3)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      can_driver.write_position_velocity(3, 0.0, velocity_, acceleration_);
-    }
-
-    if (can_driver.initialize_motor_origin(4)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      can_driver.write_position_velocity(4, 0.0, velocity_, acceleration_);
-    }
-
-    if (can_driver.initialize_motor_origin(5)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      can_driver.write_position_velocity(5, 0.0, velocity_, acceleration_);
-    }
-    if (can_driver.initialize_motor_origin(6)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      can_driver.write_position_velocity(6, 0.0, velocity_, acceleration_);
-    }
-    else {
-        RCLCPP_ERROR(get_logger(), "Failed to initialize motor origin");
-        return hardware_interface::CallbackReturn::ERROR;
-    }*/
     
     RCLCPP_INFO(get_logger(), "Successfully activated!");
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -289,19 +250,6 @@ hardware_interface::return_type MyRobotSystemHardware::read(
       // pos_[i-1] = motor_data.position;
       pos_[i-1] = motor_data.position * M_PI / 180.0;  // degree를 radian으로 변환
       spd_[i-1] = motor_data.speed;
-
-      // 너무 많은 로그를 방지하기 위해 read에서는 로그 출력을 주석 처리하거나, 디버깅 시에만 활성화합니다.
-      /*
-      
-      std::cout << std::dec;  // 10진수 모드로 명시적 설정
-      std::cout << "Motor " << static_cast<int>(motor_data.motor_id) << ": "
-          << "Position: " << pos_[i-1] << " 라디안 "
-          << "Speed: " << spd_[i-1] << " RPM "
-          << "Current: " << motor_data.current << "A "
-          << "Temperature: " << static_cast<int>(motor_data.temperature) << "°C "
-          << "Error: 0x" << std::hex << static_cast<int>(motor_data.error) 
-          << std::dec << std::endl;
-          */
   }
 
   return hardware_interface::return_type::OK;
