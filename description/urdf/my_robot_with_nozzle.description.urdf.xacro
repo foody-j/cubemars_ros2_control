@@ -96,7 +96,7 @@
 
   <xacro:revolute_joint name="link1_1_joint" parent="link1_motor" child="link1_1"
     xyz="0 0 0.0507" rpy="0 0 0" axis="0 0 1"
-    lower="${-7.0 * pi / 6.0}" upper="${pi / 6.0}" velocity="${23.0 * 2.0 * pi / 60.0}" effort="0"/>
+    lower="${-7.0 * pi / 6.0}" upper="${pi / 2.0}" velocity="${23.0 * 2.0 * pi / 60.0}" effort="0"/>
   <xacro:mesh_link name="link1_1" mesh_file="mesh_link1_1.stl" material_name="robot_blue"/>
 
   <xacro:fixed_joint name="link1_2_joint" parent="link1_1" child="link1_2" 
