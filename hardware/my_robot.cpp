@@ -192,13 +192,11 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
     if (!can_driver.connected()) {
         can_driver.connect();
     }
-
     // 원점 설정 전에 연결 확인
     if (!can_driver.connected()) {
         RCLCPP_ERROR(get_logger(), "Failed to connect to CAN bus");
         return hardware_interface::CallbackReturn::ERROR;
     }
-
     // 활성화 시 모터가 준비될 시간을 줍니다.
     RCLCPP_INFO(get_logger(), "Waiting for motors to be ready...");
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -206,14 +204,147 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
     // 모터 원점 설정을 위한 루프
     for (uint8_t i = 1; i < 7; i++) {
       can_driver.write_set_origin(i, false); // 모터 원점 설정 명령
-      std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 500ms 대기
+      std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 100ms 대기
       RCLCPP_INFO(get_logger(), "Motor %d origin set command sent", i);
     }
 
-    if (can_driver.initialize_motor_origin_duty_cycle(1, 0.04f, 0.3f, 10)) {
-      RCLCPP_INFO(get_logger(), "Motor Origin initialization Successful");
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // === 순차적 모터 원점 초기화 ===
+    RCLCPP_INFO(get_logger(), "모터 원점 초기화를 시작합니다...");
+    
+    // 초기화할 모터 수 정의 (현재는 1개만 테스트)
+    const uint8_t MOTOR_COUNT = 6;
+    const uint8_t START_MOTOR_ID = 1;
+    const int MAX_RETRY_COUNT = 2; // 최대 재시도 횟수
+
+    // 각 모터별 초기화 매개변수 (필요에 따라 모터별로 다르게 설정 가능)
+    struct MotorInitParams {
+        float duty_cycle;
+        float speed_threshold;
+        int timeout_seconds;
+    };
+
+    // 모터별 초기화 파라미터 배열 (현재는 모터 1개만)
+    MotorInitParams motor_params[MOTOR_COUNT] = {
+      {0.04f, 0.3f, 10},  // 모터 1
+      // 나중에 모터 수를 늘릴 때 아래 항목들을 추가하고 MOTOR_COUNT도 변경
+      {-0.02f, 0.2f, 10},  // 모터 2 
+      {0.02f, 0.3f, 10},  // 모터 3
+      {0.04f, 0.3f, 10},  // 모터 4
+      {0.03f, 0.3f, 10},  // 모터 5
+      {0.0f, 0.3f, 10}   // 모터 6
+    }; // 세미콜론 추가!
+    
+    // === 다른 모든 모터를 정지시키는 헬퍼 함수 ===
+    auto stop_all_other_motors = [&](uint8_t current_motor_id) {
+        // 전체 모터 범위에서 정지 (1-6번)
+        for (uint8_t i = 1; i <= 6; i++) {
+            if (i != current_motor_id) {
+                try {
+                    // 스피드 루프로 0을 줘서 완전 정지
+                    can_driver.write_velocity(i, 0.0f);
+                    RCLCPP_DEBUG(get_logger(), "모터 %d 안전 정지 완료", i);
+                } catch (const std::exception& e) {
+                    RCLCPP_WARN(get_logger(), "모터 %d 정지 중 오류: %s", i, e.what());
+                }
+            }
+        }
+        // 정지 명령이 반영될 시간 제공
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    };
+    
+    // === 각 모터를 순차적으로 초기화 (재시도 포함) ===
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+        uint8_t motor_id = START_MOTOR_ID + i;
+        bool motor_success = false;
+        
+        RCLCPP_INFO(get_logger(), "=== 모터 %d 원점 초기화 시작 ===", motor_id);
+        
+        // 현재 진행 중인 모터를 제외한 모든 모터 정지
+        RCLCPP_INFO(get_logger(), "다른 모든 모터를 안전 정지시킵니다...");
+        stop_all_other_motors(motor_id);
+        
+        // 재시도 루프 (최대 MAX_RETRY_COUNT번)
+        for (int retry = 0; retry < MAX_RETRY_COUNT && !motor_success; retry++) {
+            if (retry > 0) {
+                RCLCPP_WARN(get_logger(), "모터 %d 원점 초기화 재시도 %d/%d", 
+                           motor_id, retry + 1, MAX_RETRY_COUNT);
+                
+                // 재시도 전 추가 안정화 시간
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            
+            try {
+                // 현재 모터의 매개변수 가져오기
+                const auto& params = motor_params[i];
+                
+                RCLCPP_INFO(get_logger(), "모터 %d 원점 초기화 시도 중... (시도 %d/%d)", 
+                           motor_id, retry + 1, MAX_RETRY_COUNT);
+                
+                // 원점 초기화 함수 호출
+                bool success = can_driver.initialize_motor_origin_duty_cycle(
+                    motor_id, 
+                    params.duty_cycle, 
+                    params.speed_threshold, 
+                    params.timeout_seconds
+                );
+                
+                if (success) {
+                    motor_success = true;
+                    RCLCPP_INFO(get_logger(), "✅ 모터 %d 원점 초기화 성공! (시도 %d/%d)", 
+                               motor_id, retry + 1, MAX_RETRY_COUNT);
+                    
+                    // 성공 후 모터 완전 정지 확인
+                    can_driver.write_velocity(motor_id, 0.0f);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                    
+                } else {
+                    RCLCPP_ERROR(get_logger(), "❌ 모터 %d 원점 초기화 실패 (시도 %d/%d)", 
+                                motor_id, retry + 1, MAX_RETRY_COUNT);
+                }
+                
+            } catch (const std::exception& e) {
+                RCLCPP_ERROR(get_logger(), "모터 %d 원점 초기화 중 예외 발생 (시도 %d/%d): %s", 
+                            motor_id, retry + 1, MAX_RETRY_COUNT, e.what());
+            }
+        }
+        
+        // === 모터별 최종 결과 처리 ===
+        if (!motor_success) {
+            RCLCPP_ERROR(get_logger(), "💥 모터 %d 원점 초기화 최종 실패! (최대 재시도 %d회 모두 실패)", 
+                        motor_id, MAX_RETRY_COUNT);
+            RCLCPP_ERROR(get_logger(), "시스템 안전을 위해 활성화를 중단합니다.");
+            
+            // 실패 시 모든 모터 즉시 정지 (전체 범위 1-6)
+            for (uint8_t j = 1; j <= 6; j++) {
+                try {
+                    can_driver.write_velocity(j, 0.0f);
+                } catch (...) {
+                    // 정지 명령 실패해도 계속 진행 (안전상 중요)
+                }
+            }
+            
+            return hardware_interface::CallbackReturn::ERROR;
+        }
+        
+        RCLCPP_INFO(get_logger(), "모터 %d 완료. 다음 모터로 진행합니다...", motor_id);
+        
+        // 다음 모터 초기화 전 시스템 안정화
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
+    
+    // === 모든 모터 초기화 완료 ===
+    RCLCPP_INFO(get_logger(), "🎉 모든 모터 원점 초기화 완료!");
+    
+    // 최종 안전 확인: 모든 모터 정지 (전체 범위 1-6)
+    RCLCPP_INFO(get_logger(), "최종 안전 점검: 모든 모터 정지 확인...");
+    for (uint8_t i = 1; i <= 6; i++) {
+        try {
+            can_driver.write_velocity(i, 0.0f);
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(get_logger(), "모터 %d 최종 정지 확인 중 오류: %s", i, e.what());
+        }
+    }
+    
     
     RCLCPP_INFO(get_logger(), "Successfully activated!");
     return hardware_interface::CallbackReturn::SUCCESS;

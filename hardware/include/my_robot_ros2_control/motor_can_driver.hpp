@@ -24,6 +24,8 @@
 #include <functional>
 #include <atomic>
 #include <mutex>
+#include <fstream>
+#include <sys/wait.h>
 #include "motor_data.hpp"
 #include "can_csv_logger.hpp"
 #include "cubemars_motors.hpp"
@@ -95,28 +97,64 @@ public:
 
     void connect() {
         static constexpr int32_t BITRATE = 1000000;  // 1Mbps
+        static constexpr int MAX_RETRY_COUNT = 3;
 
         try {
             // 가능한 모든 CAN 인터페이스를 찾아 연결 시도
             for (int i = 0; i < MAX_CAN_INTERFACES; i++) {
-                try {
-                    std::string interface_name = "can" + std::to_string(i);
-                    connect_interface(can_interfaces_[i], interface_name, BITRATE);
-                    std::cout << "Successfully connected to " << interface_name 
-                            << " with bitrate " <<BITRATE << std::endl;
-                } catch (const std::exception& e) {
-                    std::cerr << "Failed to connect to can" << i << ": " 
-                            << e.what() << std::endl;
-                    // 이 인터페이스 연결 실패는 무시하고 다음 인터페이스로 진행
+                std::string interface_name = "can" + std::to_string(i);
+                
+                // 인터페이스 존재 여부 확인
+                if (!check_interface_exists(interface_name)) {
+                    std::cout << "Interface " << interface_name << " does not exist, skipping..." << std::endl;
+                    continue;
+                }
+                
+                // 재시도 로직 추가
+                bool connected = false;
+                for (int retry = 0; retry < MAX_RETRY_COUNT && !connected; retry++) {
+                    try {
+                        if (retry > 0) {
+                            std::cout << "Retrying connection to " << interface_name 
+                                    << " (attempt " << retry + 1 << "/" << MAX_RETRY_COUNT << ")" << std::endl;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500 * retry)); // 점진적 지연
+                        }
+                        
+                        connect_interface(can_interfaces_[i], interface_name, BITRATE);
+                        std::cout << "✅ Successfully connected to " << interface_name 
+                                << " with bitrate " << BITRATE << std::endl;
+                        connected = true;
+                        
+                    } catch (const std::exception& e) {
+                        std::cerr << "❌ Attempt " << retry + 1 << " failed for " << interface_name 
+                                << ": " << e.what() << std::endl;
+                        
+                        // 실패한 경우 정리
+                        try {
+                            cleanup_interface(interface_name);
+                        } catch (...) {
+                            // 정리 실패는 무시
+                        }
+                        
+                        if (retry == MAX_RETRY_COUNT - 1) {
+                            std::cerr << "⚠️  All retry attempts failed for " << interface_name << std::endl;
+                        }
+                    }
+                }
+                
+                // 인터페이스들 사이에 안정화 시간 추가
+                if (connected) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
             }
             
             // 적어도 하나의 인터페이스가 연결되었는지 확인
             if (std::none_of(can_interfaces_.begin(), can_interfaces_.end(),
                            [](const CanInterface& i) { return i.is_connected; })) {
-                throw std::runtime_error("Failed to connect to any CAN interface");
+                throw std::runtime_error("Failed to connect to any CAN interface after all retries");
             }
             
+            std::cout << "🚀 Starting command thread..." << std::endl;
             // 명령 스레드 시작
             running_ = true;
             command_thread_ = std::thread(&CanComms::command_loop, this);
@@ -237,24 +275,45 @@ public:
     MotorDataManager& getMotorManager() {
         return motor_manager_;
     }
-
+    /**
+    * @brief 듀티 사이클 기반 모터 원점 초기화 함수
+    * 
+    * 이 함수는 모터를 특정 듀티 사이클로 구동하여 기계적 한계점(원점)을 찾는 방식으로 동작합니다.
+    * 모터가 장애물에 부딪혀 정지하는 순간을 감지하여 해당 위치를 원점으로 설정합니다.
+    * 
+    * @param driver_id 모터 드라이버 ID (1부터 MAX_MOTORS까지)
+    * @param duty_cycle 원점 탐색용 듀티 사이클 (-1.0 ~ 1.0, 기본값: -0.04, 음수는 역방향)
+    * @param speed_threshold 모터 정지 판단 기준 속도 (RPM, 기본값: 0.5)
+    * @param timeout_seconds 최대 대기 시간 (초, 기본값: 10)
+    * @return bool 원점 초기화 성공 여부
+    */
     // 새로운 듀티 사이클 기반 원점 초기화 함수
     bool initialize_motor_origin_duty_cycle(uint8_t driver_id, float duty_cycle = -0.04f,
                                             float speed_threshold = 0.5f, int timeout_seconds = 10) {
+        std::cout << "DEBUG: 원점 초기화 함수 시작 (모터 " << driver_id << ")" << std::endl;
         auto TIMEOUT_DURATION = std::chrono::seconds(timeout_seconds);
-
+        // 입력 매개변수 유효성 검사
         if (driver_id < 1 || driver_id > MAX_MOTORS) {
             throw std::runtime_error("Invalid motor ID");
         }
-
-        // 상태를 관리하기 위한 변수
-        enum class HomingState { WATING_FOR_MOVEMENT, WAITING_FOR_STOP };
+        /**
+        * 홈잉(원점 탐색) 상태 정의
+        * - WATING_FOR_MOVEMENT: 모터가 움직이기 시작하기를 대기하는 상태
+        * - WAITING_FOR_STOP: 모터가 정지하기를 대기하는 상태 (원점에 도달했음을 의미)
+        */
+        enum class HomingState { 
+            WATING_FOR_MOVEMENT,  // 1단계: 모터 움직임 감지 대기
+            WAITING_FOR_STOP    // 2단계: 모터가 정지하기를 대기하는 상태 (원점에 도달했음을 의미)
+        };
+        // 초기 상태를 움직임 대기로 설정
         HomingState state = HomingState::WATING_FOR_MOVEMENT;
+
         try {
+            // 사용자에게 원점 탐색 시작을 알림
             std::cout << "듀티 사이클 기반 원점 탐색 시작 (모터 " << static_cast<int>(driver_id)
                       << ", 탐색 듀티 사이클: " << duty_cycle << ")\n";
             
-            // 초기 정지
+            // 초기 정지 모터를
             write_duty_cycle(driver_id, 0.0f);
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -283,10 +342,11 @@ public:
                         data = getMotorData(driver_id); // 다시 한번 최신 데이터 확인
                         if (std::abs(data.speed) < speed_threshold) {
                             std::cout << "원점 감지됨 (속도: " << data.speed << " RPM)\n";
-                        write_set_origin(driver_id, false);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        write_duty_cycle(driver_id, 0.0f);
-                        return true;
+                            std::cout.flush(); // 이것을 함수 내부에 추가
+                            write_set_origin(driver_id, false);
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            write_velocity(driver_id, 0.0f);
+                            return true;
                         }
                     }
                 }    
@@ -411,55 +471,139 @@ private:
 
     std::array<MotorCommand, MAX_MOTORS> motor_commands_;
 
-    // CAN 인터페이스 연결 (단일 인터페이스)
+    /**
+     * @brief CAN 인터페이스가 시스템에 존재하는지 확인
+     */
+    bool check_interface_exists(const std::string& interface_name) {
+        std::ifstream file("/sys/class/net/" + interface_name + "/type");
+        return file.good();
+    }
+    /**
+     * @brief 개선된 system 명령 실행 함수
+     */
+    bool execute_command_safe(const std::string& command, const std::string& operation_desc = "") {
+        std::cout << "🔧 Executing: " << command << std::endl;
+        
+        int status = std::system(command.c_str());
+        
+        // WIFEXITED와 WEXITSTATUS를 사용한 정확한 에러 체크
+        if (WIFEXITED(status)) {
+            int exit_code = WEXITSTATUS(status);
+            if (exit_code == 0) {
+                if (!operation_desc.empty()) {
+                    std::cout << "✅ " << operation_desc << " successful" << std::endl;
+                }
+                return true;
+            } else {
+                std::cerr << "❌ " << operation_desc << " failed with exit code: " << exit_code << std::endl;
+                return false;
+            }
+        } else {
+            std::cerr << "❌ " << operation_desc << " terminated abnormally" << std::endl;
+            return false;
+        }
+    }
+
+    /**
+     * @brief CAN 인터페이스 상태 확인
+     */
+    bool is_interface_up(const std::string& interface_name) {
+        std::ifstream file("/sys/class/net/" + interface_name + "/operstate");
+        std::string state;
+        if (file >> state) {
+            return (state == "up" || state == "unknown");
+        }
+        return false;
+    }
+
+    /**
+     * @brief 인터페이스 정리 함수
+     */
+    void cleanup_interface(const std::string& interface_name) {
+        std::cout << "🧹 Cleaning up interface: " << interface_name << std::endl;
+        
+        // 강제로 인터페이스 다운
+        execute_command_safe("ip link set " + interface_name + " down", 
+                           "Force down " + interface_name);
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    /**
+     * @brief 개선된 CAN 인터페이스 연결 함수
+     */
     void connect_interface(CanInterface& interface, const std::string& can_name, int32_t bitrate) {
         try {
-            // 1. CAN 인터페이스를 내린다
-            std::stringstream ss;
-            ss << "ip link set " << can_name <<" down";
-            int result = std::system(ss.str().c_str());
-            if (result <0) {
+            std::cout << " Connecting to " << can_name << "..." << std::endl;
+
+            // 1. 기존 상태 정리
+            cleanup_interface(can_name);
+            // 2. CAN 인터페이스를 내린다 (안전 대기 포함)
+            if (!execute_command_safe("ip link set " + can_name + " down", 
+                                    "Set " + can_name + " down")) {
                 throw std::runtime_error("Failed to set CAN interface down");
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-            // 2. bitrate 설정
-            ss.str("");
-            ss << "ip link set " << can_name <<" type can bitrate " << bitrate;
-            result = std::system(ss.str().c_str());
-            if (result < 0) {
+            // 3. bitrate 설정
+            std::string bitrate_cmd = "ip link set " + can_name + " type can bitrate " + std::to_string(bitrate);
+            if (!execute_command_safe(bitrate_cmd, "Set bitrate for " + can_name)) {
                 throw std::runtime_error("Failed to set CAN bitrate");
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-            // 3. CAN 인터페이스를 올린다이렇게 하면 모터가 아직 매핑되지 않았더라도 명령을 받을 수 있고, 응답하면 자동으로 매핑이 설정되어 이후에는 해당 인터페이스로만 통신하게 됩니다.
-            ss.str("");
-            ss << "ip link set " << can_name <<" up";
-            result = std::system(ss.str().c_str());
-            if (result <0) {
+            // 4. CAN 인터페이스를 올린다 (안전 대기 포함)
+            if (!execute_command_safe("ip link set " + can_name + " up", 
+                                    "Set " + can_name + " up")) {
                 throw std::runtime_error("Failed to set CAN interface up");
             }
-
-            // 4. 소켓 생성
+            // 5. 인터페이스가 실제로 up 상태가 될 때까지 대기 (최대 2초)
+            for (int i = 0; i < 20; i++) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                if (is_interface_up(can_name)) {
+                    std::cout << "✅ Interface " << can_name << " is up and ready" << std::endl;
+                    break;
+                }
+                if (i == 19) {
+                    throw std::runtime_error("Interface failed to come up within timeout");
+                }
+            }
+            
+            // 6. 소켓 생성
             interface.socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
             if (interface.socket_fd < 0) {
-                throw std::runtime_error("Failed to create CAN socket");
+                throw std::runtime_error("Failed to create CAN socket: " + std::string(strerror(errno)));
             }
 
-            // 5. 인터페이스 이름으로 인덱스 찾기
+            // 7. 인터페이스 이름으로 인덱스 찾기
             struct ifreq ifr;
-            std::strcpy(ifr.ifr_name, can_name.c_str());
+            std::memset(&ifr, 0, sizeof(ifr));
+            std::strncpy(ifr.ifr_name, can_name.c_str(), IFNAMSIZ - 1);
+            
             if (ioctl(interface.socket_fd, SIOCGIFINDEX, &ifr) < 0) {
                 close(interface.socket_fd);
-                throw std::runtime_error("Failed to get interface index");
+                interface.socket_fd = -1;
+                throw std::runtime_error("Failed to get interface index: " + std::string(strerror(errno)));
             }
 
-            // 6. 소켓 바인딩
+            // 8. 소켓 바인딩
             struct sockaddr_can addr;
+            std::memset(&addr, 0, sizeof(addr));
             addr.can_family = AF_CAN;
             addr.can_ifindex = ifr.ifr_ifindex;
 
             if (bind(interface.socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
                 close(interface.socket_fd);
-                throw std::runtime_error("Failed to bind CAN socket");
+                interface.socket_fd = -1;
+                throw std::runtime_error("Failed to bind CAN socket: " + std::string(strerror(errno)));
+            }
+
+            // 9. 소켓 옵션 설정 (타임아웃 등)
+            struct timeval timeout;
+            timeout.tv_sec = 0;
+            timeout.tv_usec = 10000; // 10ms
+            if (setsockopt(interface.socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+                std::cerr << "⚠️  Warning: Failed to set socket timeout" << std::endl;
             }
 
             // 연결 상태 업데이트
@@ -469,8 +613,14 @@ private:
             // 읽기 스레드 시작
             interface.read_running = true;
             interface.read_thread = std::thread(&CanComms::read_loop, this, std::ref(interface));
+            
+            std::cout << "🎉 " << can_name << " connection completed successfully!" << std::endl;
+            
         }
         catch(const std::exception& e) {
+            std::cerr << "💥 Connection failed for " << can_name << ": " << e.what() << std::endl;
+            
+            // 실패 시 정리
             if (interface.socket_fd >= 0) {
                 close(interface.socket_fd);
                 interface.socket_fd = -1;
@@ -479,6 +629,7 @@ private:
             throw;
         }
     }
+
 
     // CAN 인터페이스 연결 해제 (단일 인터페이스)
     void disconnect_interface(CanInterface& interface) {

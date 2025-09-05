@@ -91,7 +91,6 @@ private:
   // ▼▼▼ 2. JointLimits 구조체 벡터를 멤버 변수로 추가합니다. ▼▼▼
   // 이 변수에 on_init 단계에서 읽어온 각 조인트의 min/max 값이 저장됩니다.
   std::vector<JointLimits> hw_joint_limits_;
-
 };
 
 }  // namespace sfbot_can
