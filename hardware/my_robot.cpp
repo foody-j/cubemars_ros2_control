@@ -229,8 +229,8 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       // 나중에 모터 수를 늘릴 때 아래 항목들을 추가하고 MOTOR_COUNT도 변경
       {-0.02f, 0.2f, 10},  // 모터 2 
       {0.02f, 0.3f, 10},  // 모터 3
-      {0.04f, 0.3f, 10},  // 모터 4
-      {0.03f, 0.3f, 10},  // 모터 5
+      {-0.04f, 0.3f, 10},  // 모터 4
+      {-0.03f, 0.3f, 10},  // 모터 5
       {0.0f, 0.3f, 10}   // 모터 6
     }; // 세미콜론 추가!
     
@@ -345,7 +345,18 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
         }
     }
     
-    
+    try {
+      configure_terminal()
+      keyboard_running_ = true;
+      keyboard_thread_ = std::thread(&MyRobotSystemHardware::keyboard_input_loop, this);
+      RCLCPP_INFO(get_logger(), "🎮 Teaching mode ready!");
+      RCLCPP_INFO(get_logger(), "💡 Press 't' to start teaching, 'q' to stop, 'ESC' for emergency stop");
+
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(get_logger(), "Failed to start keyboard thread: %s", e.what());
+      return hardware_interface::CallbackReturn::ERROR;
+
+    }
     RCLCPP_INFO(get_logger(), "Successfully activated!");
     return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -356,7 +367,17 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_deactivate(
 {
   // BEGIN: This part here is for exemplary purposes - Please do not copy to your production code
   RCLCPP_INFO(get_logger(), "Deactivating ...please wait...");
-
+  // ✅ 새로 추가: 교시모드 종료
+  if (teaching_mode_active_) {
+      stop_teaching_mode();
+  }
+  
+  // ✅ 새로 추가: 키보드 스레드 종료
+  keyboard_running_ = false;
+  if (keyboard_thread_.joinable()) {
+      keyboard_thread_.join();
+  }
+  restore_terminal();
   //comms_.disconnect(); // 연결 끊기
   can_driver.disconnect();
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
@@ -382,6 +403,18 @@ hardware_interface::return_type MyRobotSystemHardware::read(
       pos_[i-1] = motor_data.position * M_PI / 180.0;  // degree를 radian으로 변환
       spd_[i-1] = motor_data.speed;
   }
+  // 교시모드일 때 데이터 수집 (100Hz)
+  if (teaching_mode_active_) {
+    // 속도와 전류 데이터도 함께 수집
+    float joint_velocities[6];
+    float joint_currents[6];
+    for (int i = 0; i < 6; i++) {
+            joint_velocities[i] = spd_[i];  // RPM 단위
+            auto motor_data_current = can_driver.getMotorData(i + 1);
+            joint_currents[i] = motor_data_current.current;  // Ampere 단위
+    }
+    teaching_logger_.log_frame(pos_, joint_velocities, joint_currents);
+  }
 
   return hardware_interface::return_type::OK;
 }
@@ -394,27 +427,36 @@ hardware_interface::return_type MyRobotSystemHardware::write(
   }
   
   try {
-    // ⭐ 동적으로 속도 제한 (급격한 변화 방지)
-    const float MAX_VELOCITY = 3.0f;    // 최대 3 RPM으로 제한
-    const float MAX_ACCELERATION = 5.0f; // 최대 5 RPM/s로 제한
-    
-    float limited_velocity = std::min(velocity_, MAX_VELOCITY);
-    float limited_acceleration = std::min(acceleration_, MAX_ACCELERATION);
+    // 교시 모드 체크
+    if (teaching_mode_active_) {
+      // 교시모드: 관절을 브레이크 모드로 전환 우선은 1,2번 모터는 기어비가 크므로 따로 설정 x 3,4번 모터만 진행, 5,6번 모터는 문제가 있어 제외.
+      can_driver.write_brake_current(3, teaching_brake_currents_[2]);
+      can_driver.write_brake_current(4, teaching_brake_currents_[3]);
+    } else {
 
-    // for 루프를 사용하여 모든 조인트에 제한을 적용하고 명령을 전송합니다.
-    for (uint i =0; i < 6; ++i)
-    {
-        // 컨트롤러부터 받은 명령에 조인트 제한을 적용합니다.
-        double clamped_command_rad = std::clamp(
-          cmd_[i],
-          hw_joint_limits_[i].min_position,
-          hw_joint_limits_[i].max_position
-        );
-        // 조인트 제한을 적용한 명령을 모터가 사용하는 단위로 변환한다
-        double command_deg = clamped_command_rad * 180.0 / M_PI; // radian to degree 변환
+      // 일반 모드
+      // ⭐ 동적으로 속도 제한 (급격한 변화 방지)
+      const float MAX_VELOCITY = 3.0f;    // 최대 3 RPM으로 제한
+      const float MAX_ACCELERATION = 5.0f; // 최대 5 RPM/s로 제한
+      
+      float limited_velocity = std::min(velocity_, MAX_VELOCITY);
+      float limited_acceleration = std::min(acceleration_, MAX_ACCELERATION);
 
-        // 최종 값읋 CAN 드라이버에 전송한다 (모터 ID는 1부터 시작하므로 i+1 사용)
-        can_driver.write_position_velocity(i + 1, command_deg, limited_velocity, limited_acceleration);
+      // for 루프를 사용하여 모든 조인트에 제한을 적용하고 명령을 전송합니다.
+      for (uint i =0; i < 6; ++i)
+      {
+          // 컨트롤러부터 받은 명령에 조인트 제한을 적용합니다.
+          double clamped_command_rad = std::clamp(
+            cmd_[i],
+            hw_joint_limits_[i].min_position,
+            hw_joint_limits_[i].max_position
+          );
+          // 조인트 제한을 적용한 명령을 모터가 사용하는 단위로 변환한다
+          double command_deg = clamped_command_rad * 180.0 / M_PI; // radian to degree 변환
+
+          // 최종 값읋 CAN 드라이버에 전송한다 (모터 ID는 1부터 시작하므로 i+1 사용)
+          can_driver.write_position_velocity(i + 1, command_deg, limited_velocity, limited_acceleration);
+      }
     }
     
     // 디버그 출력 (필요시)
@@ -431,6 +473,148 @@ hardware_interface::return_type MyRobotSystemHardware::write(
   }
 
   return hardware_interface::return_type::OK;
+}
+
+// ✅ 새로 추가: 키보드 입력 처리 루프
+void MyRobotSystemHardware::keyboard_input_loop() {
+    while (keyboard_running_) {
+        char key = get_keypress();
+        
+        if (key == 't' && !teaching_mode_active_) {
+            start_teaching_mode();
+        } else if (key == 'q' && teaching_mode_active_) {
+            stop_teaching_mode();
+        } else if (key == 27) { // ESC key
+            RCLCPP_WARN(get_logger(), "🚨 Emergency stop requested!");
+            emergency_stop_all_motors();
+            if (teaching_mode_active_) {
+                stop_teaching_mode();
+            }
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));  // 20Hz 체크
+    }
+}
+
+// ✅ 새로 추가: 교시모드 시작
+void MyRobotSystemHardware::start_teaching_mode() {
+    if (teaching_mode_active_) {
+        return;
+    }
+    
+    // 안전성 검사
+    if (!validate_teaching_safety()) {
+        RCLCPP_ERROR(get_logger(), "❌ Teaching mode safety check failed!");
+        return;
+    }
+    
+    RCLCPP_INFO(get_logger(), "🔴 Starting teaching mode...");
+    
+    // 교시 데이터 로깅 시작
+    if (!teaching_logger_.start_teaching("robot_teaching")) {
+        RCLCPP_ERROR(get_logger(), "❌ Failed to start teaching logger!");
+        return;
+    }
+    
+    // 교시모드 활성화
+    teaching_mode_active_ = true;
+    
+    RCLCPP_INFO(get_logger(), "✅ Teaching mode started! Manually move the robot...");
+    RCLCPP_INFO(get_logger(), "💡 Brake currents: [%.1f, %.1f, %.1f, %.1f, %.1f, %.1f] A", 
+               teaching_brake_currents_[0], teaching_brake_currents_[1], 
+               teaching_brake_currents_[2], teaching_brake_currents_[3], 
+               teaching_brake_currents_[4], teaching_brake_currents_[5]);
+}
+
+// ✅ 새로 추가: 교시모드 중지
+void MyRobotSystemHardware::stop_teaching_mode() {
+    if (!teaching_mode_active_) {
+        return;
+    }
+    
+    RCLCPP_INFO(get_logger(), "⏹️  Stopping teaching mode...");
+    
+    // 교시모드 비활성화
+    teaching_mode_active_ = false;
+    
+    // 교시 데이터 로깅 중지
+    teaching_logger_.stop_teaching();
+    
+    // 모든 모터를 안전하게 정지
+    for (uint i = 0; i < 6; ++i) {
+        try {
+            can_driver.write_velocity(i + 1, 0.0f);
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(get_logger(), "Warning: Failed to stop motor %d: %s", i+1, e.what());
+        }
+    }
+    
+    RCLCPP_INFO(get_logger(), "✅ Teaching mode stopped!");
+    RCLCPP_INFO(get_logger(), "💡 Press 't' to start new teaching session");
+}
+
+// ✅ 새로 추가: 터미널 설정
+void MyRobotSystemHardware::configure_terminal() {
+    // 현재 터미널 설정 저장
+    tcgetattr(STDIN_FILENO, &original_termios_);
+    
+    struct termios new_termios = original_termios_;
+    
+    // canonical 모드 비활성화, echo 비활성화
+    new_termios.c_lflag &= ~(ICANON | ECHO);
+    new_termios.c_cc[VMIN] = 0;   // 비블로킹 읽기
+    new_termios.c_cc[VTIME] = 0;  // 타임아웃 없음
+    
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+    terminal_configured_ = true;
+}
+
+// ✅ 새로 추가: 터미널 설정 복원
+void MyRobotSystemHardware::restore_terminal() {
+    if (terminal_configured_) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &original_termios_);
+        terminal_configured_ = false;
+    }
+}
+
+// ✅ 새로 추가: 논블로킹 키 입력
+char MyRobotSystemHardware::get_keypress() {
+    char ch;
+    if (read(STDIN_FILENO, &ch, 1) == 1) {
+        return ch;
+    }
+    return 0;  // 키 입력 없음
+}
+
+// ✅ 새로 추가: 비상정지
+void MyRobotSystemHardware::emergency_stop_all_motors() {
+    for (uint8_t i = 1; i <= 6; i++) {
+        try {
+            can_driver.write_velocity(i, 0.0f);
+        } catch (...) {
+            // 비상정지는 예외가 발생해도 계속 진행
+        }
+    }
+}
+
+// ✅ 새로 추가: 안전성 검사
+bool MyRobotSystemHardware::validate_teaching_safety() {
+    // CAN 연결 상태 확인
+    if (!can_driver.connected()) {
+        RCLCPP_ERROR(get_logger(), "CAN driver not connected");
+        return false;
+    }
+    
+    // 모터 상태 확인 (필요시 추가 검사)
+    for (uint8_t i = 1; i <= 6; i++) {
+        auto motor_data = can_driver.getMotorData(i);
+        if (motor_data.error != 0) {
+            RCLCPP_ERROR(get_logger(), "Motor %d has error code: %d", i, motor_data.error);
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 }  // namespace my_robot_ros2_control

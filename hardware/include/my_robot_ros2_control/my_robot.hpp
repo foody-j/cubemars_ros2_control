@@ -30,6 +30,11 @@
 #include "motor_can_driver.hpp"
 #include "motor_data.hpp"
 
+// ✅ 새로 추가: Teaching 관련 헤더
+#include "teaching_data_logger.hpp"
+#include <termios.h>  // 키보드 입력용
+#include <unistd.h>   // 키보드 입력용
+
 
 // ROS 2 컨트롤 데모 예제 1의 네임스페이스 시작
 namespace my_robot_ros2_control
@@ -91,6 +96,32 @@ private:
   // ▼▼▼ 2. JointLimits 구조체 벡터를 멤버 변수로 추가합니다. ▼▼▼
   // 이 변수에 on_init 단계에서 읽어온 각 조인트의 min/max 값이 저장됩니다.
   std::vector<JointLimits> hw_joint_limits_;
+  // ✅ 새로 추가: Teaching Mode 관련 멤버 변수들
+  std::atomic<bool> teaching_mode_active_{false};
+  std::thread keyboard_thread_;
+  std::atomic<bool> keyboard_running_{false};
+  SimpleTeachingLogger teaching_logger_;
+  // 교시모드 설정 (사용자가 설정 가능)
+  std::array<float, 6> teaching_brake_currents_ = {
+      0.0f, 0.0f,  // 관절 1,2: 큰 관절이므로 높은 브레이크 전류
+      1.0f, 1.0f,  // 관절 3,4: 중간 크기
+      1.5f, 1.5f   // 관절 5,6: 작은 관절이므로 낮은 브레이크 전류
+  };
+  // 터미널 설정 복원용
+  struct termios original_termios_;
+  bool terminal_configured_ = false;
+
+  // ✅ 새로 추가: Teaching Mode 관련 멤버 함수들
+  void keyboard_input_loop();
+  void start_teaching_mode();
+  void stop_teaching_mode();
+  void configure_terminal();
+  void restore_terminal();
+  char get_keypress();
+  
+  // 안전 기능
+  void emergency_stop_all_motors();
+  bool validate_teaching_safety();
 };
 
 }  // namespace sfbot_can

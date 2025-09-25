@@ -192,6 +192,25 @@ public:
 
     // 모터 명령 메서드들 (기존 코드와 유사하지만 모터 ID에 따라 적절한 CAN 인터페이스 선택)
 
+    void write_brake_current(uint8_t driver_id, float brake_current_A) {
+        if (driver_id < 1 || driver_id > MAX_MOTORS) {
+            throw std::runtime_error("Invalid motor ID");
+        }
+        // 브레이크 전류 범위 체크 (0-60A)
+        if (brake_current_A < 0.0f || brake_current_A > 60.0f) {
+            throw std::runtime_error("Brake current out of range (0-60A)");
+        }
+
+        // 모터 명령 업데이트
+        std::lock_guard<std::mutex> lock(command_mutex_);
+        motor_commands_[driver_id - 1].motor_id = driver_id;
+        motor_commands_[driver_id - 1].brake_current = brake_current_A;
+        motor_commands_[driver_id - 1].active = true;
+        motor_commands_[driver_id - 1].command_type = CommandType::BRAKE_CURRENT;
+        motor_commands_[driver_id - 1].last_sent = std::chrono::steady_clock::now();
+
+    }
+
     void write_duty_cycle(uint8_t driver_id, float duty) {
         if (driver_id < 1 || driver_id > MAX_MOTORS) {
             throw std::runtime_error("Invalid motor ID");
@@ -282,7 +301,7 @@ public:
     * 모터가 장애물에 부딪혀 정지하는 순간을 감지하여 해당 위치를 원점으로 설정합니다.
     * 
     * @param driver_id 모터 드라이버 ID (1부터 MAX_MOTORS까지)
-    * @param duty_cycle 원점 탐색용 듀티 사이클 (-1.0 ~ 1.0, 기본값: -0.04, 음수는 역방향)
+    * @param duty_cycle 원점 탐색용 듀티 사이클 (-1.0 ~ 1.0, 기본값: -0.04,   음수는 역방향)
     * @param speed_threshold 모터 정지 판단 기준 속도 (RPM, 기본값: 0.5)
     * @param timeout_seconds 최대 대기 시간 (초, 기본값: 10)
     * @return bool 원점 초기화 성공 여부
@@ -296,27 +315,44 @@ public:
         if (driver_id < 1 || driver_id > MAX_MOTORS) {
             throw std::runtime_error("Invalid motor ID");
         }
+
+        // === 모터별 실제 원점 오프셋 정의 ===
+        // 각 모터의 기계적 한계점에서 실제 원점까지의 거리
+        const float MOTOR_ORIGIN_OFFSETS[7] = {
+            0.0f,    // 인덱스 0 (사용 안함)
+            -90.0f,   // 모터 1:
+            90.0f,   // 모터 2:
+            -60.0f,   // 모터 3:
+            95.0f,   // 모터 4: 한계점에서 +5.2도가r 실제 원점
+            200.0f,   // 모터 5: 한계점에서 -4.6도가 실제 원점
+            0.0f    // 모터 6: 한계점에서 +5.7도가 실제 원점
+        };
+
+        // 이동 관련 매개변수
+        const float MOVE_TO_ORIGIN_SPEED = 5.0f;    // 원점 이동 속도 (RPM)
+        const float MOVE_TO_ORIGIN_ACC = 7.0f;
+
         /**
         * 홈잉(원점 탐색) 상태 정의
-        * - WATING_FOR_MOVEMENT: 모터가 움직이기 시작하기를 대기하는 상태
+        * - WAITING_FOR_MOVEMENT: 모터가 움직이기 시작하기를 대기하는 상태
         * - WAITING_FOR_STOP: 모터가 정지하기를 대기하는 상태 (원점에 도달했음을 의미)
         */
         enum class HomingState { 
-            WATING_FOR_MOVEMENT,  // 1단계: 모터 움직임 감지 대기
-            WAITING_FOR_STOP    // 2단계: 모터가 정지하기를 대기하는 상태 (원점에 도달했음을 의미)
+            WAITING_FOR_MOVEMENT,  // 1단계: 모터 움직임 감지 대기
+            WAITING_FOR_STOP,    // 2단계: 모터가 정지하기를 대기하는 상태 (원점에 도달했음을 의미)
+            MOVING_TO_TRUE_ORIGIN,  // 실제 원점으로 이동
+            COMPLETED               // 완료
         };
         // 초기 상태를 움직임 대기로 설정
-        HomingState state = HomingState::WATING_FOR_MOVEMENT;
-
+        HomingState state = HomingState::WAITING_FOR_MOVEMENT;
         try {
             // 사용자에게 원점 탐색 시작을 알림
             std::cout << "듀티 사이클 기반 원점 탐색 시작 (모터 " << static_cast<int>(driver_id)
                       << ", 탐색 듀티 사이클: " << duty_cycle << ")\n";
             
-            // 초기 정지 모터를
+            // 초기 정지
             write_duty_cycle(driver_id, 0.0f);
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
             // 원점 탐색 시작
             write_duty_cycle(driver_id, duty_cycle);
 
@@ -328,7 +364,7 @@ public:
                 MotorData data = getMotorData(driver_id);
                 
                 // [1단계] 모터가 움직이기 시작했는지 확인
-                if (state == HomingState::WATING_FOR_MOVEMENT) {
+                if (state == HomingState::WAITING_FOR_MOVEMENT) {
                     if (std::abs(data.speed) > speed_threshold) {
                         std::cout << "모터 움직임 감지됨. 이제 정지를 대기합니다... (현재 속도: " 
                         << data.speed << " RPM)\n";
@@ -346,80 +382,84 @@ public:
                             write_set_origin(driver_id, false);
                             std::this_thread::sleep_for(std::chrono::milliseconds(100));
                             write_velocity(driver_id, 0.0f);
-                            return true;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                            // 바로 실제 원점으로 이동 단계로 전환
+                            state = HomingState::MOVING_TO_TRUE_ORIGIN;
+                            break;
                         }
                     }
                 }    
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-            std::cout << "원점 초기화 시간 초과\n";
-            write_duty_cycle(driver_id, 0.0f); // 안전을 위해 모터 정지
-            return false;
-
-        } catch (const std::exception& e) {
-            std::cerr << "원점 초기화 실패: " << e.what() << "\n";
-            write_duty_cycle(driver_id, 0.0f); // 안전을 위해 모터 정지
-            return false;
-        }
-    }
-    
-    
-    // 원점 초기화 함수 - 임계 토크 파라미터화
-    bool initialize_motor_origin(uint8_t driver_id, float current_threshold = 0.4f,
-                                 float search_speed = -2.0f, int timeout_seconds = 5) {
-        static auto TIMEOUT_DURATION = std::chrono::seconds(timeout_seconds);
-
-        if (driver_id < 1 || driver_id > MAX_MOTORS) {
-            throw std::runtime_error("Invalid motor ID");
-        }
-        // 모터가 매핑된 CAN 인터페이스 확인
-        int can_idx = get_can_index_for_motor(driver_id);
-        if (can_idx < 0) {
-            throw std::runtime_error("Motor not mapped to any CAN interface");
-        }
-
-        try {
-            std::cout << "원점 탐색 시작 (모터 " << static_cast<int>(driver_id)
-                      << ", 임계 전류: " << current_threshold << "A(\n";
-            auto start_time = std::chrono::steady_clock::now();
-            struct can_frame frame;
-
-            while (std::chrono::steady_clock::now() - start_time <TIMEOUT_DURATION) {
-                if (readCanFrame(can_interfaces_[can_idx], frame)) {
-                    uint8_t resp_id = frame.can_id & 0xFF;
-                    if (resp_id == driver_id) {
-                        // 위치 값 확인 
-                        int16_t position_raw = (frame.data[0] << 8) | frame.data[1];
-                        float position = position_raw * 0.1f;
-                        // 전류 값 확인VELOCITY
-                        int16_t current_raw = (frame.data[4] << 8) | frame.data[5];
-                        float current = current_raw * 0.01f;
-
-                        std::cout << "Position: " << position <<", Current: " <<current << "A\n";
-
-                        if (current > current_threshold) {
-                            std::cout << "원점 감지됨: " << current << "A\n";
-                            write_set_origin(driver_id, false);
-                            write_velocity(driver_id, 0.0f);
-                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                            return true;
-                        }
-                    }
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            
+            if (state != HomingState::MOVING_TO_TRUE_ORIGIN) {
+                std::cout << "기계적 한계점 탐색 시간 초과" << std::endl;
+                write_duty_cycle(driver_id, 0.0f);
+                return false;
             }
 
-            std::cout <<"원점 초기화 시간 초과\n";
-            write_velocity(driver_id, 0.0f);  // 안전을 위해 모터 정지
-            return false;
+            // === 2단계: 실제 원점으로 직접 이동 (write_position_velocity 사용) ===
+            float true_origin_position = MOTOR_ORIGIN_OFFSETS[driver_id];
+            std::cout << "2단계: 실제 원점으로 이동 (목표: " << true_origin_position << "도)" << std::endl;
+            
+            // 현재 위치 확인
+            MotorData current_data = getMotorData(driver_id);
+            float distance_to_origin = true_origin_position - current_data.position;
+            
+            std::cout << "현재 위치: " << current_data.position 
+                    << "도, 목표까지 거리: " << distance_to_origin << "도" << std::endl;
+            
+            // 실제 원점이 한계점에서 멀리 떨어져 있는지 확인 (안전 검증)
+            if (std::abs(distance_to_origin) < 1.0f) {
+                std::cout << "경고: 원점이 한계점에서 너무 가까움 (" << distance_to_origin 
+                        << "도). 안전을 위해 최소 1도 이상 떨어뜨려주세요." << std::endl;
+            }
+             
+            // 원점으로 한 번에 이동 (position_velocity 모드)
+            write_position_velocity(driver_id, true_origin_position, MOVE_TO_ORIGIN_SPEED, MOVE_TO_ORIGIN_ACC);
+            // 이동 완료 대기 (간단한 확인만)
+            std::this_thread::sleep_for(std::chrono::milliseconds(500)); // 초기 대기
+
+
+            
+            auto origin_move_start = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() - origin_move_start < std::chrono::seconds(10)) {
+            MotorData data = getMotorData(driver_id);
+            
+            // 실제 원점 도달 확인 (0.5도 정밀도)
+            if (std::abs(data.position - true_origin_position) < 0.2f) {
+                    std::cout << "실제 원점 도달! 위치: " << data.position << "도" << std::endl;
+                    state = HomingState::COMPLETED;
+                    break;
+                }
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+
+            if (state != HomingState::COMPLETED) {
+                std::cout << "실제 원점 이동 시간 초과" << std::endl;
+                return false;
+            }
+            
+            write_velocity(driver_id, 0.0f);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // 원점 설정
+            write_set_origin(driver_id, false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            write_position_velocity(driver_id, 0.0f, MOVE_TO_ORIGIN_SPEED, MOVE_TO_ORIGIN_ACC);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::cout.flush();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+            return true;
 
         } catch (const std::exception& e) {
             std::cerr << "원점 초기화 실패: " << e.what() << "\n";
-            write_velocity(driver_id, 0.0f);  // 안전을 위해 모터 정지
+            write_duty_cycle(driver_id, 0.0f); // 안전을 위해 모터 정지
             return false;
         }
     }
-
+    
 private:
     // 최대 CAN 인터페이스 수
     static const int MAX_CAN_INTERFACES = 3;
@@ -442,6 +482,7 @@ private:
     enum class CommandType {
         DUTY,
         CURRENT,
+        BRAKE_CURRENT,
         VELOCITY,
         POSITION_VELOCITY,
         SET_ORIGIN
@@ -452,6 +493,7 @@ private:
         uint8_t motor_id;
         float duty;  // duty_cycle mode에서 사용
         float current; // current mode에서 사용
+        float brake_current; // brake_current mode에서 사용
         float value;  // velocity mode에서 사용
         float position;  // position-velocity mode에서 사용
         float velocity;  // position-velocity mode에서 사용
@@ -465,6 +507,7 @@ private:
         
         MotorCommand() : motor_id(0), value(0), position(0), velocity(0), 
                         acceleration(0), active(false), current(0),
+                        brake_current(0),
                         command_type(CommandType::VELOCITY),
                         try_all_interfaces(true) {} // 기본적으로 true로 설정 {}
     };
@@ -692,15 +735,6 @@ private:
             return motor_to_can_map_[idx];
         }
         
-        /*
-        // 모터 ID에 따라 CAN 인터페이스 결정 (요구사항에 맞춤)
-        if (motor_id <= 2) {
-            return 0;  // CAN0: 모터 1,2
-        } else if (motor_id <= 4) {
-            return 1;  // CAN1: 모터 3,4
-        } else {
-            return 2;  // CAN2: 모터 5,6
-        }*/
        return -1;  // 아직 매핑되지 않음
     }
 
@@ -857,6 +891,21 @@ private:
                             frame.data[1] = (current_mA >> 16) & 0xFF;
                             frame.data[2] = (current_mA >> 8) & 0xFF;
                             frame.data[3] = current_mA & 0xFF;
+                        } else if (cmd_copy.command_type == CommandType::BRAKE_CURRENT) {
+                            // 🆕 Current Brake Mode 처리
+                            uint32_t control_mode = 2;  // Current Brake Mode 
+                            uint32_t id = (control_mode << 8) | cmd_copy.motor_id;
+                            
+                            // 브레이크 전류를 mA 단위로 변환 (이미지 기준: current * 1000.0)
+                            int32_t brake_current_mA = static_cast<int32_t>(cmd_copy.brake_current * 1000.0f);
+                            
+                            frame.can_id = id | CAN_EFF_FLAG;
+                            frame.can_dlc = 4;
+                            // 32비트 데이터를 Big Endian으로 전송 (이미지의 Data[0-3] 순서)
+                            frame.data[0] = (brake_current_mA >> 24) & 0xFF;  // 25-32bit
+                            frame.data[1] = (brake_current_mA >> 16) & 0xFF;  // 17-24bit
+                            frame.data[2] = (brake_current_mA >> 8) & 0xFF;   // 9-16bit
+                            frame.data[3] = brake_current_mA & 0xFF;          // 1-8bit
                         } else {
                             std::cerr << "Unknown command type for motor " 
                                     << static_cast<int>(cmd_copy.motor_id) << std::endl;
