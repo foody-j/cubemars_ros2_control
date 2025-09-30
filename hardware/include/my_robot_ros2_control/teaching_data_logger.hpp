@@ -51,9 +51,11 @@ public:
             return false;
         }
         
-        // CSV 헤더 작성
-        csv_file << "timestamp_ms,frame_count,"
+        // CSV 헤더 작성 (LSTM 학습용 풍부한 데이터)
+        csv_file << "timestamp_ms,timestamp_sec,frame_count,"
                  << "joint1_rad,joint2_rad,joint3_rad,joint4_rad,joint5_rad,joint6_rad,"
+                 << "joint1_vel_rpm,joint2_vel_rpm,joint3_vel_rpm,joint4_vel_rpm,joint5_vel_rpm,joint6_vel_rpm,"
+                 << "joint1_current_A,joint2_current_A,joint3_current_A,joint4_current_A,joint5_current_A,joint6_current_A,"
                  << "joint1_deg,joint2_deg,joint3_deg,joint4_deg,joint5_deg,joint6_deg\n";
         csv_file.flush();
         
@@ -63,11 +65,12 @@ public:
         logging_enabled = true;
         
         std::cout << "🔴 Teaching started: " << log_filename << std::endl;
-        std::cout << "💡 Press 'q' to stop teaching..." << std::endl;
         return true;
     }
     
-    void log_frame(const double joint_positions_rad[6]) {
+    void log_frame(const double joint_positions_rad[6], 
+                   const float joint_velocities_rpm[6] = nullptr,
+                   const float joint_currents_A[6] = nullptr) {
         if (!logging_enabled) return;
         
         std::lock_guard<std::mutex> lock(log_mutex);
@@ -75,18 +78,37 @@ public:
         auto now = std::chrono::steady_clock::now();
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - start_time).count();
+        auto elapsed_sec = elapsed_ms / 1000.0;
         
         frame_count++;
         
-        // timestamp_ms, frame_count
-        csv_file << elapsed_ms << "," << frame_count;
+        // timestamp_ms, timestamp_sec, frame_count
+        csv_file << elapsed_ms << "," << std::fixed << std::setprecision(3) << elapsed_sec << "," << frame_count;
         
-        // joint positions in radians
+        // joint positions in radians (for LSTM input)
         for (int i = 0; i < 6; i++) {
             csv_file << "," << std::fixed << std::setprecision(6) << joint_positions_rad[i];
         }
         
-        // joint positions in degrees (for easy reading)
+        // joint velocities in RPM (for LSTM input)
+        for (int i = 0; i < 6; i++) {
+            if (joint_velocities_rpm) {
+                csv_file << "," << std::fixed << std::setprecision(2) << joint_velocities_rpm[i];
+            } else {
+                csv_file << ",0.0";
+            }
+        }
+        
+        // joint currents in Ampere (for force/torque information)
+        for (int i = 0; i < 6; i++) {
+            if (joint_currents_A) {
+                csv_file << "," << std::fixed << std::setprecision(3) << joint_currents_A[i];
+            } else {
+                csv_file << ",0.0";
+            }
+        }
+        
+        // joint positions in degrees (for human reading)
         for (int i = 0; i < 6; i++) {
             csv_file << "," << std::fixed << std::setprecision(2) << (joint_positions_rad[i] * 180.0 / M_PI);
         }

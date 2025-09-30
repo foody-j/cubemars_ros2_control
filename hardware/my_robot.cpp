@@ -208,6 +208,7 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       RCLCPP_INFO(get_logger(), "Motor %d origin set command sent", i);
     }
 
+    /*
     // === 순차적 모터 원점 초기화 ===
     RCLCPP_INFO(get_logger(), "모터 원점 초기화를 시작합니다...");
     
@@ -227,9 +228,9 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
     MotorInitParams motor_params[MOTOR_COUNT] = {
       {0.04f, 0.3f, 10},  // 모터 1
       // 나중에 모터 수를 늘릴 때 아래 항목들을 추가하고 MOTOR_COUNT도 변경
-      {-0.02f, 0.2f, 10},  // 모터 2 
-      {0.02f, 0.3f, 10},  // 모터 3
-      {-0.04f, 0.3f, 10},  // 모터 4
+      {-0.04f, 0.2f, 10},  // 모터 2 
+      {0.0f, 0.3f, 10},  // 모터 3
+      {0.1f, 0.3f, 10},  // 모터 4
       {-0.03f, 0.3f, 10},  // 모터 5
       {0.0f, 0.3f, 10}   // 모터 6
     }; // 세미콜론 추가!
@@ -331,7 +332,7 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
         // 다음 모터 초기화 전 시스템 안정화
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    
+    */
     // === 모든 모터 초기화 완료 ===
     RCLCPP_INFO(get_logger(), "🎉 모든 모터 원점 초기화 완료!");
     
@@ -346,14 +347,26 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
     }
     
     try {
-      configure_terminal()
-      keyboard_running_ = true;
-      keyboard_thread_ = std::thread(&MyRobotSystemHardware::keyboard_input_loop, this);
-      RCLCPP_INFO(get_logger(), "🎮 Teaching mode ready!");
-      RCLCPP_INFO(get_logger(), "💡 Press 't' to start teaching, 'q' to stop, 'ESC' for emergency stop");
-
+      RCLCPP_INFO(get_logger(), "🔧 Creating ROS2 node for teaching mode...");
+      // 노드 생성
+      node_ = std::make_shared<rclcpp::Node>("teaching_mode_controller");
+      
+      // 토픽 구독자 생성
+      teaching_mode_sub_ = node_->create_subscription<std_msgs::msg::Bool>(
+          "/teaching_mode", 10,
+          std::bind(&MyRobotSystemHardware::teaching_mode_callback, this, std::placeholders::_1));
+      
+      // Executor 생성 및 스레드 시작
+      executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+      executor_->add_node(node_);
+      
+      executor_thread_ = std::thread([this]() {
+          executor_->spin();
+      });
+      RCLCPP_INFO(get_logger(), "✅ Teaching mode topic subscriber ready!");
+      RCLCPP_INFO(get_logger(), "💡 Use: ros2 topic pub /teaching_mode std_msgs/msg/Bool \"{data: true}\"");
     } catch (const std::exception& e) {
-      RCLCPP_ERROR(get_logger(), "Failed to start keyboard thread: %s", e.what());
+      RCLCPP_ERROR(get_logger(), "Failed to create teaching mode subscriber: %s", e.what());
       return hardware_interface::CallbackReturn::ERROR;
 
     }
@@ -371,13 +384,16 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_deactivate(
   if (teaching_mode_active_) {
       stop_teaching_mode();
   }
-  
-  // ✅ 새로 추가: 키보드 스레드 종료
-  keyboard_running_ = false;
-  if (keyboard_thread_.joinable()) {
-      keyboard_thread_.join();
+  // ✅ Executor 및 노드 정리
+  if (executor_) {
+      executor_->cancel();
   }
-  restore_terminal();
+  if (executor_thread_.joinable()) {
+      executor_thread_.join();
+  }
+  if (node_) {
+      node_.reset();
+  }
   //comms_.disconnect(); // 연결 끊기
   can_driver.disconnect();
   RCLCPP_INFO(get_logger(), "Successfully deactivated!");
@@ -432,6 +448,8 @@ hardware_interface::return_type MyRobotSystemHardware::write(
       // 교시모드: 관절을 브레이크 모드로 전환 우선은 1,2번 모터는 기어비가 크므로 따로 설정 x 3,4번 모터만 진행, 5,6번 모터는 문제가 있어 제외.
       can_driver.write_brake_current(3, teaching_brake_currents_[2]);
       can_driver.write_brake_current(4, teaching_brake_currents_[3]);
+      can_driver.write_brake_current(5, teaching_brake_currents_[4]);
+      can_driver.write_brake_current(6, teaching_brake_currents_[5]);
     } else {
 
       // 일반 모드
@@ -475,29 +493,29 @@ hardware_interface::return_type MyRobotSystemHardware::write(
   return hardware_interface::return_type::OK;
 }
 
-// ✅ 새로 추가: 키보드 입력 처리 루프
-void MyRobotSystemHardware::keyboard_input_loop() {
-    while (keyboard_running_) {
-        char key = get_keypress();
-        
-        if (key == 't' && !teaching_mode_active_) {
-            start_teaching_mode();
-        } else if (key == 'q' && teaching_mode_active_) {
-            stop_teaching_mode();
-        } else if (key == 27) { // ESC key
-            RCLCPP_WARN(get_logger(), "🚨 Emergency stop requested!");
-            emergency_stop_all_motors();
-            if (teaching_mode_active_) {
-                stop_teaching_mode();
-            }
-        }
-        
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));  // 20Hz 체크
+
+// 사용 방법:
+// ros2 topic pub /teaching_mode std_msgs/msg/Bool "{data: true}" --once 시작
+// ros2 topic pub /teaching_mode std_msgs/msg/Bool "{data: false}" --once 종료
+
+// # 토픽 리스트 확인
+// ros2 topic list | grep teaching
+
+// # 현재 교시모드 상태 확인 (로그 확인)
+// ros2 topic echo /rosout
+// ✅ 토픽 콜백 함수
+void MyRobotSystemHardware::teaching_mode_callback(const std_msgs::msg::Bool::SharedPtr msg)
+{
+    if (msg->data && !teaching_mode_active_) {
+        start_teaching_mode();
+    } else if (!msg->data && teaching_mode_active_) {
+        stop_teaching_mode();
     }
 }
 
-// ✅ 새로 추가: 교시모드 시작
-void MyRobotSystemHardware::start_teaching_mode() {
+// ✅ 교시모드 시작
+void MyRobotSystemHardware::start_teaching_mode()
+{
     if (teaching_mode_active_) {
         return;
     }
@@ -516,7 +534,6 @@ void MyRobotSystemHardware::start_teaching_mode() {
         return;
     }
     
-    // 교시모드 활성화
     teaching_mode_active_ = true;
     
     RCLCPP_INFO(get_logger(), "✅ Teaching mode started! Manually move the robot...");
@@ -526,18 +543,16 @@ void MyRobotSystemHardware::start_teaching_mode() {
                teaching_brake_currents_[4], teaching_brake_currents_[5]);
 }
 
-// ✅ 새로 추가: 교시모드 중지
-void MyRobotSystemHardware::stop_teaching_mode() {
+// ✅ 교시모드 중지
+void MyRobotSystemHardware::stop_teaching_mode()
+{
     if (!teaching_mode_active_) {
         return;
     }
     
     RCLCPP_INFO(get_logger(), "⏹️  Stopping teaching mode...");
     
-    // 교시모드 비활성화
     teaching_mode_active_ = false;
-    
-    // 교시 데이터 로깅 중지
     teaching_logger_.stop_teaching();
     
     // 모든 모터를 안전하게 정지
@@ -550,44 +565,13 @@ void MyRobotSystemHardware::stop_teaching_mode() {
     }
     
     RCLCPP_INFO(get_logger(), "✅ Teaching mode stopped!");
-    RCLCPP_INFO(get_logger(), "💡 Press 't' to start new teaching session");
+    RCLCPP_INFO(get_logger(), "💡 Use topic to start new teaching session");
 }
 
-// ✅ 새로 추가: 터미널 설정
-void MyRobotSystemHardware::configure_terminal() {
-    // 현재 터미널 설정 저장
-    tcgetattr(STDIN_FILENO, &original_termios_);
-    
-    struct termios new_termios = original_termios_;
-    
-    // canonical 모드 비활성화, echo 비활성화
-    new_termios.c_lflag &= ~(ICANON | ECHO);
-    new_termios.c_cc[VMIN] = 0;   // 비블로킹 읽기
-    new_termios.c_cc[VTIME] = 0;  // 타임아웃 없음
-    
-    tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
-    terminal_configured_ = true;
-}
-
-// ✅ 새로 추가: 터미널 설정 복원
-void MyRobotSystemHardware::restore_terminal() {
-    if (terminal_configured_) {
-        tcsetattr(STDIN_FILENO, TCSANOW, &original_termios_);
-        terminal_configured_ = false;
-    }
-}
-
-// ✅ 새로 추가: 논블로킹 키 입력
-char MyRobotSystemHardware::get_keypress() {
-    char ch;
-    if (read(STDIN_FILENO, &ch, 1) == 1) {
-        return ch;
-    }
-    return 0;  // 키 입력 없음
-}
-
-// ✅ 새로 추가: 비상정지
-void MyRobotSystemHardware::emergency_stop_all_motors() {
+// ✅ 비상정지
+void MyRobotSystemHardware::emergency_stop_all_motors()
+{
+    RCLCPP_WARN(get_logger(), "🚨 Emergency stop activated!");
     for (uint8_t i = 1; i <= 6; i++) {
         try {
             can_driver.write_velocity(i, 0.0f);
@@ -597,15 +581,14 @@ void MyRobotSystemHardware::emergency_stop_all_motors() {
     }
 }
 
-// ✅ 새로 추가: 안전성 검사
-bool MyRobotSystemHardware::validate_teaching_safety() {
-    // CAN 연결 상태 확인
+// ✅ 안전성 검사
+bool MyRobotSystemHardware::validate_teaching_safety()
+{
     if (!can_driver.connected()) {
         RCLCPP_ERROR(get_logger(), "CAN driver not connected");
         return false;
     }
     
-    // 모터 상태 확인 (필요시 추가 검사)
     for (uint8_t i = 1; i <= 6; i++) {
         auto motor_data = can_driver.getMotorData(i);
         if (motor_data.error != 0) {

@@ -29,11 +29,12 @@
 #include "rclcpp_lifecycle/state.hpp" // 생명 주기 상태 정의
 #include "motor_can_driver.hpp"
 #include "motor_data.hpp"
-
-// ✅ 새로 추가: Teaching 관련 헤더
 #include "teaching_data_logger.hpp"
-#include <termios.h>  // 키보드 입력용
-#include <unistd.h>   // 키보드 입력용
+
+// ROS 2 메시지 타입
+#include "std_msgs/msg/bool.hpp"
+#include <termios.h>
+
 
 
 // ROS 2 컨트롤 데모 예제 1의 네임스페이스 시작
@@ -96,10 +97,13 @@ private:
   // ▼▼▼ 2. JointLimits 구조체 벡터를 멤버 변수로 추가합니다. ▼▼▼
   // 이 변수에 on_init 단계에서 읽어온 각 조인트의 min/max 값이 저장됩니다.
   std::vector<JointLimits> hw_joint_limits_;
+
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr teaching_mode_sub_;
+  rclcpp::executors::SingleThreadedExecutor::SharedPtr executor_;
+  std::thread executor_thread_;
   // ✅ 새로 추가: Teaching Mode 관련 멤버 변수들
   std::atomic<bool> teaching_mode_active_{false};
-  std::thread keyboard_thread_;
-  std::atomic<bool> keyboard_running_{false};
   SimpleTeachingLogger teaching_logger_;
   // 교시모드 설정 (사용자가 설정 가능)
   std::array<float, 6> teaching_brake_currents_ = {
@@ -112,12 +116,10 @@ private:
   bool terminal_configured_ = false;
 
   // ✅ 새로 추가: Teaching Mode 관련 멤버 함수들
-  void keyboard_input_loop();
+  void teaching_mode_callback(const std_msgs::msg::Bool::SharedPtr msg);
   void start_teaching_mode();
   void stop_teaching_mode();
-  void configure_terminal();
-  void restore_terminal();
-  char get_keypress();
+
   
   // 안전 기능
   void emergency_stop_all_motors();
