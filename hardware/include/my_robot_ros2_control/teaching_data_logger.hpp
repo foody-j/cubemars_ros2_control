@@ -8,6 +8,8 @@
 #include <mutex>
 #include <iostream>
 #include <string>
+#include <cmath>
+
 
 class SimpleTeachingLogger {
 private:
@@ -51,12 +53,15 @@ public:
             return false;
         }
         
-        // CSV 헤더 작성 (LSTM 학습용 풍부한 데이터)
+        // ✅ CSV 헤더 작성 (Joint Space + Task Space)
         csv_file << "timestamp_ms,timestamp_sec,frame_count,"
+                 // Joint Space (6 DOF)
                  << "joint1_rad,joint2_rad,joint3_rad,joint4_rad,joint5_rad,joint6_rad,"
                  << "joint1_vel_rpm,joint2_vel_rpm,joint3_vel_rpm,joint4_vel_rpm,joint5_vel_rpm,joint6_vel_rpm,"
                  << "joint1_current_A,joint2_current_A,joint3_current_A,joint4_current_A,joint5_current_A,joint6_current_A,"
-                 << "joint1_deg,joint2_deg,joint3_deg,joint4_deg,joint5_deg,joint6_deg\n";
+                 << "joint1_deg,joint2_deg,joint3_deg,joint4_deg,joint5_deg,joint6_deg,"
+                 // ✅ Task Space (End-Effector Pose)
+                 << "ee_x_m,ee_y_m,ee_z_m,ee_roll_rad,ee_pitch_rad,ee_yaw_rad\n";
         csv_file.flush();
         
         // 시작 시간 설정
@@ -68,9 +73,12 @@ public:
         return true;
     }
     
+    // ✅ Task Space 데이터를 받는 새로운 log_frame 함수
     void log_frame(const double joint_positions_rad[6], 
-                   const float joint_velocities_rpm[6] = nullptr,
-                   const float joint_currents_A[6] = nullptr) {
+                   const float joint_velocities_rpm[6],
+                   const float joint_currents_A[6],
+                   double ee_x, double ee_y, double ee_z,
+                   double ee_roll, double ee_pitch, double ee_yaw) {
         if (!logging_enabled) return;
         
         std::lock_guard<std::mutex> lock(log_mutex);
@@ -92,20 +100,12 @@ public:
         
         // joint velocities in RPM (for LSTM input)
         for (int i = 0; i < 6; i++) {
-            if (joint_velocities_rpm) {
-                csv_file << "," << std::fixed << std::setprecision(2) << joint_velocities_rpm[i];
-            } else {
-                csv_file << ",0.0";
-            }
+            csv_file << "," << std::fixed << std::setprecision(2) << joint_velocities_rpm[i];
         }
         
         // joint currents in Ampere (for force/torque information)
         for (int i = 0; i < 6; i++) {
-            if (joint_currents_A) {
-                csv_file << "," << std::fixed << std::setprecision(3) << joint_currents_A[i];
-            } else {
-                csv_file << ",0.0";
-            }
+            csv_file << "," << std::fixed << std::setprecision(3) << joint_currents_A[i];
         }
         
         // joint positions in degrees (for human reading)
@@ -113,13 +113,23 @@ public:
             csv_file << "," << std::fixed << std::setprecision(2) << (joint_positions_rad[i] * 180.0 / M_PI);
         }
         
+        // ✅ End-Effector Pose (Task Space)
+        csv_file << "," << std::fixed << std::setprecision(6) << ee_x
+                 << "," << std::fixed << std::setprecision(6) << ee_y
+                 << "," << std::fixed << std::setprecision(6) << ee_z
+                 << "," << std::fixed << std::setprecision(6) << ee_roll
+                 << "," << std::fixed << std::setprecision(6) << ee_pitch
+                 << "," << std::fixed << std::setprecision(6) << ee_yaw;
+        
         csv_file << "\n";
         csv_file.flush();
         
         // 진행 상황 출력 (매 1초마다)
         if (frame_count % 100 == 0) {  // 100Hz면 1초마다
             std::cout << "📊 Teaching frames: " << frame_count 
-                     << " (Duration: " << elapsed_ms / 1000.0 << "s)" << std::endl;
+                     << " (Duration: " << elapsed_ms / 1000.0 << "s)"
+                     << " | EE: (" << std::fixed << std::setprecision(3) 
+                     << ee_x << ", " << ee_y << ", " << ee_z << ")" << std::endl;
         }
     }
     

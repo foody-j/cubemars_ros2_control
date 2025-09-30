@@ -12,6 +12,10 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(ros2_control REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 # C++ 소스 파일들을 사용하여 공유 라이브러리를 생성합니다.
 # 라이브러리 이름은 package.xml의 플러그인 설명과 일치해야 합니다.
@@ -33,6 +37,10 @@ ament_target_dependencies(my_robot_ros2_control PUBLIC
   rclcpp
   rclcpp_lifecycle
   ros2_control
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  geometry_msgs
 )
 
 # 플러그인 XML 파일을 등록합니다.

@@ -208,7 +208,7 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       RCLCPP_INFO(get_logger(), "Motor %d origin set command sent", i);
     }
 
-    /*
+    
     // === 순차적 모터 원점 초기화 ===
     RCLCPP_INFO(get_logger(), "모터 원점 초기화를 시작합니다...");
     
@@ -229,7 +229,7 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       {0.04f, 0.3f, 10},  // 모터 1
       // 나중에 모터 수를 늘릴 때 아래 항목들을 추가하고 MOTOR_COUNT도 변경
       {-0.04f, 0.2f, 10},  // 모터 2 
-      {0.0f, 0.3f, 10},  // 모터 3
+      {0.07f, 0.3f, 10},  // 모터 3
       {0.1f, 0.3f, 10},  // 모터 4
       {-0.03f, 0.3f, 10},  // 모터 5
       {0.0f, 0.3f, 10}   // 모터 6
@@ -332,7 +332,7 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
         // 다음 모터 초기화 전 시스템 안정화
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    */
+    
     // === 모든 모터 초기화 완료 ===
     RCLCPP_INFO(get_logger(), "🎉 모든 모터 원점 초기화 완료!");
     
@@ -350,7 +350,12 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       RCLCPP_INFO(get_logger(), "🔧 Creating ROS2 node for teaching mode...");
       // 노드 생성
       node_ = std::make_shared<rclcpp::Node>("teaching_mode_controller");
-      
+      // tf2 버퍼 및 리스너 생성
+      tf_buffer_ = std::make_unique<tf2_ros::Buffer>(node_->get_clock());
+      tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+      RCLCPP_INFO(get_logger(), "✅ tf2 listener initialized");
+
       // 토픽 구독자 생성
       teaching_mode_sub_ = node_->create_subscription<std_msgs::msg::Bool>(
           "/teaching_mode", 10,
@@ -429,7 +434,18 @@ hardware_interface::return_type MyRobotSystemHardware::read(
             auto motor_data_current = can_driver.getMotorData(i + 1);
             joint_currents[i] = motor_data_current.current;  // Ampere 단위
     }
-    teaching_logger_.log_frame(pos_, joint_velocities, joint_currents);
+    // End-Effector Pose 계산
+    double ee_x = 0.0, ee_y = 0.0, ee_z = 0.0;
+    double ee_roll = 0.0, ee_pitch = 0.0, ee_yaw = 0.0;
+
+    if (get_end_effector_pose(ee_x, ee_y, ee_z, ee_roll, ee_pitch, ee_yaw)) {
+          teaching_logger_.log_frame(pos_, joint_velocities, joint_currents,
+                                     ee_x, ee_y, ee_z, ee_roll, ee_pitch, ee_yaw);
+    } else {
+          // tf2 조회 실패 시 0으로 기록 (또는 이전 값 유지)
+          teaching_logger_.log_frame(pos_, joint_velocities, joint_currents,
+                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    }
   }
 
   return hardware_interface::return_type::OK;
@@ -446,6 +462,8 @@ hardware_interface::return_type MyRobotSystemHardware::write(
     // 교시 모드 체크
     if (teaching_mode_active_) {
       // 교시모드: 관절을 브레이크 모드로 전환 우선은 1,2번 모터는 기어비가 크므로 따로 설정 x 3,4번 모터만 진행, 5,6번 모터는 문제가 있어 제외.
+      can_driver.write_brake_current(1, teaching_brake_currents_[0]);
+      can_driver.write_brake_current(2, teaching_brake_currents_[1]);
       can_driver.write_brake_current(3, teaching_brake_currents_[2]);
       can_driver.write_brake_current(4, teaching_brake_currents_[3]);
       can_driver.write_brake_current(5, teaching_brake_currents_[4]);
@@ -566,6 +584,51 @@ void MyRobotSystemHardware::stop_teaching_mode()
     
     RCLCPP_INFO(get_logger(), "✅ Teaching mode stopped!");
     RCLCPP_INFO(get_logger(), "💡 Use topic to start new teaching session");
+}
+
+// ✅ End-Effector Pose 계산 (tf2 이용)
+bool MyRobotSystemHardware::get_end_effector_pose(
+    double& x, double& y, double& z,
+    double& roll, double& pitch, double& yaw)
+{
+    try {
+        // base_link에서 end_effector (또는 tool0, link6 등) 까지의 변환 조회
+        // ⚠️ 실제 URDF의 end-effector 링크 이름으로 변경 필요
+        geometry_msgs::msg::TransformStamped transform_stamped = 
+            tf_buffer_->lookupTransform(
+                "base_link",           // 베이스 프레임
+                "tcp",              // End-effector 프레임 (URDF에 맞게 수정)
+                tf2::TimePointZero,    // 최신 데이터 사용
+                tf2::durationFromSec(0.1)  // 타임아웃 100ms
+            );
+        
+        // Position 추출
+        x = transform_stamped.transform.translation.x;
+        y = transform_stamped.transform.translation.y;
+        z = transform_stamped.transform.translation.z;
+        
+        // Orientation (Quaternion -> RPY 변환)
+        tf2::Quaternion q(
+            transform_stamped.transform.rotation.x,
+            transform_stamped.transform.rotation.y,
+            transform_stamped.transform.rotation.z,
+            transform_stamped.transform.rotation.w
+        );
+        
+        tf2::Matrix3x3 m(q);
+        m.getRPY(roll, pitch, yaw);
+        
+        return true;
+        
+    } catch (const tf2::TransformException& ex) {
+        // tf2 조회 실패 (초기화 중이거나 아직 데이터 없음)
+        // 너무 자주 출력되면 성능 저하되므로 간헐적으로만 로그
+        static int error_count = 0;
+        if (++error_count % 100 == 0) {  // 1초마다 한 번씩만 출력
+            RCLCPP_WARN(get_logger(), "Could not get end-effector transform: %s", ex.what());
+        }
+        return false;
+    }
 }
 
 // ✅ 비상정지

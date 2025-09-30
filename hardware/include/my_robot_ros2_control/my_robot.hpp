@@ -33,8 +33,13 @@
 
 // ROS 2 메시지 타입
 #include "std_msgs/msg/bool.hpp"
-#include <termios.h>
 
+// tf2 관련 헤더
+#include "tf2_ros/transform_listener.h"
+#include "tf2_ros/buffer.h"
+#include "geometry_msgs/msg/transform_stamped.hpp"
+#include "tf2/LinearMath/Matrix3x3.h"
+#include "tf2/LinearMath/Quaternion.h"
 
 
 // ROS 2 컨트롤 데모 예제 1의 네임스페이스 시작
@@ -98,10 +103,16 @@ private:
   // 이 변수에 on_init 단계에서 읽어온 각 조인트의 min/max 값이 저장됩니다.
   std::vector<JointLimits> hw_joint_limits_;
 
+  // ✅ ROS2 노드 및 토픽 구독자
   rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr teaching_mode_sub_;
   rclcpp::executors::SingleThreadedExecutor::SharedPtr executor_;
   std::thread executor_thread_;
+  
+  // ✅ tf2 관련 (End-Effector Pose 계산용)
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
   // ✅ 새로 추가: Teaching Mode 관련 멤버 변수들
   std::atomic<bool> teaching_mode_active_{false};
   SimpleTeachingLogger teaching_logger_;
@@ -111,14 +122,13 @@ private:
       1.0f, 1.0f,  // 관절 3,4: 중간 크기
       1.5f, 1.5f   // 관절 5,6: 작은 관절이므로 낮은 브레이크 전류
   };
-  // 터미널 설정 복원용
-  struct termios original_termios_;
-  bool terminal_configured_ = false;
 
-  // ✅ 새로 추가: Teaching Mode 관련 멤버 함수들
+  // ✅ Teaching Mode 관련 멤버 함수들
   void teaching_mode_callback(const std_msgs::msg::Bool::SharedPtr msg);
   void start_teaching_mode();
   void stop_teaching_mode();
+  bool get_end_effector_pose(double& x, double& y, double& z, 
+                             double& roll, double& pitch, double& yaw);
 
   
   // 안전 기능
