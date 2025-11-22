@@ -229,7 +229,7 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
       {0.04f, 0.3f, 10},  // 모터 1
       // 나중에 모터 수를 늘릴 때 아래 항목들을 추가하고 MOTOR_COUNT도 변경
       {-0.04f, 0.2f, 10},  // 모터 2 
-      {0.07f, 0.3f, 10},  // 모터 3
+      {0.05f, 0.3f, 10},  // 모터 3
       {0.1f, 0.3f, 10},  // 모터 4
       {-0.03f, 0.3f, 10},  // 모터 5
       {0.0f, 0.3f, 10}   // 모터 6
@@ -345,7 +345,18 @@ hardware_interface::CallbackReturn MyRobotSystemHardware::on_activate(
             RCLCPP_WARN(get_logger(), "모터 %d 최종 정지 확인 중 오류: %s", i, e.what());
         }
     }
-    
+    // ✅ 현재 위치를 읽어서 cmd_에 복사 (제자리 유지!)
+    for (uint8_t i = 1; i < 7; i++)  
+    {
+        motor_data = can_driver.getMotorData(i);
+        pos_[i-1] = motor_data.position * M_PI / 180.0;
+        cmd_[i-1] = pos_[i-1];  // ⭐ 핵심: 현재 위치를 명령으로!
+    }
+    RCLCPP_INFO(get_logger(), "✅ Initial cmd_ set to current position:");
+    for (uint i = 0; i < 6; ++i) {
+        RCLCPP_INFO(get_logger(), "  Joint %d: cmd=%.3f, pos=%.3f", 
+                   i+1, cmd_[i], pos_[i]);
+    }
     try {
       RCLCPP_INFO(get_logger(), "🔧 Creating ROS2 node for teaching mode...");
       // 노드 생성

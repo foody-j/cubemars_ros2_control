@@ -83,4 +83,26 @@ install(DIRECTORY description/urdf/meshes/
   DESTINATION share/${PROJECT_NAME}/description/urdf/meshes/
 )
 
+
+# Teaching Replay Node
+find_package(trajectory_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+
+add_executable(teaching_replay_node
+  src/teaching_replay_node.cpp
+)
+
+ament_target_dependencies(teaching_replay_node
+  rclcpp
+  trajectory_msgs
+  sensor_msgs
+  std_srvs
+)
+
+install(TARGETS teaching_replay_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+
 ament_package()

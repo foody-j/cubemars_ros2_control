@@ -19,6 +19,11 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>geometry_msgs</depend>
 
+  <!-- Teaching Replay 의존성 -->
+  <depend>trajectory_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>forward_command_controller</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
