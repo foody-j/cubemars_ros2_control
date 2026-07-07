@@ -1,0 +1,20 @@
+extruder_serial_node:
+  ros__parameters:
+    port: "/dev/ttyUSB0"
+    baud: 115200
+    control_mode: "mixed"
+    read_status_on_start: true
+
+    motors:
+      a:
+        interval_us: 50
+        direction: 0
+        run_on_start: false
+      b:
+        interval_us: 3000
+        direction: 0
+        run_on_start: false
+      c:
+        interval_us: 50
+        direction: 0
+        run_on_start: false

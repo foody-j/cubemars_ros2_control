@@ -16,6 +16,8 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 # C++ 소스 파일들을 사용하여 공유 라이브러리를 생성합니다.
 # 라이브러리 이름은 package.xml의 플러그인 설명과 일치해야 합니다.
@@ -41,6 +43,8 @@ ament_target_dependencies(my_robot_ros2_control PUBLIC
   tf2_ros
   tf2_geometry_msgs
   geometry_msgs
+  std_msgs
+  std_srvs
 )
 
 # 플러그인 XML 파일을 등록합니다.
@@ -69,13 +73,24 @@ install(
 )
 
 install(
-  DIRECTORY bringup/launch bringup/config
+  DIRECTORY bringup/config
   DESTINATION share/${PROJECT_NAME}/bringup
+)
+
+install(
+  DIRECTORY bringup/launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 install(
   DIRECTORY description
   DESTINATION share/${PROJECT_NAME}
+)
+
+# MoveIt config files
+install(
+  DIRECTORY config/moveit
+  DESTINATION share/${PROJECT_NAME}/config
 )
 
 # STL 파일들 설치
@@ -87,7 +102,6 @@ install(DIRECTORY description/urdf/meshes/
 # Teaching Replay Node
 find_package(trajectory_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(std_srvs REQUIRED)
 
 add_executable(teaching_replay_node
   src/teaching_replay_node.cpp
@@ -104,5 +118,53 @@ install(TARGETS teaching_replay_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Job Runner Node
+find_package(yaml_cpp_vendor REQUIRED)
+
+add_executable(job_runner
+  src/job_runner_node.cpp
+)
+
+ament_target_dependencies(job_runner
+  rclcpp
+  trajectory_msgs
+  std_srvs
+)
+
+target_link_libraries(job_runner
+  yaml-cpp
+)
+
+install(TARGETS job_runner
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Extruder Serial Node
+add_executable(extruder_serial_node
+  src/extruder_serial_node.cpp
+)
+
+ament_target_dependencies(extruder_serial_node
+  rclcpp
+  std_msgs
+)
+
+install(TARGETS extruder_serial_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install config files (safe_poses, printing_jobs, etc.)
+install(
+  FILES
+    config/safe_poses.yaml
+    config/extruder_params.yaml
+  DESTINATION share/${PROJECT_NAME}/config
+)
+
+# Install scripts
+install(PROGRAMS
+  scripts/verify_hall_polarity.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()

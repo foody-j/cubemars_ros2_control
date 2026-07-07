@@ -22,30 +22,32 @@ my_robot_arm_controller:
       - link6_1_joint
     command_interfaces:
       - position
+      - velocity
     state_interfaces:
       - position
+      - velocity
     cmd_timeout: 0.0  # 0 = timeout 비활성화
-    allow_nonzero_velocity_at_trajectory_end: true  # ✅ 핵심!
+    allow_nonzero_velocity_at_trajectory_end: false
+    allow_integration_in_goal_trajectories: true
     constraints:
       goal_time: 0.0  # 목표 도달 시간 제약 (0은 제한 없음)
       stopped_velocity_tolerance: 0.01 # 멈춤 상태로 간주할 속도 허용치
 
-      # ✅ trajectory tolerance 증가!
       link1_1_joint:
-        trajectory: 2.0  # 0.5 → 2.0 (114도 허용)
-        goal: 0.2
+        trajectory: 0.05
+        goal: 0.03
       link2_1_joint:
-        trajectory: 2.0
-        goal: 0.2
+        trajectory: 0.05
+        goal: 0.03
       link3_1_joint:
-        trajectory: 2.0
-        goal: 0.2
+        trajectory: 0.05
+        goal: 0.03
       link4_1_joint:
-        trajectory: 2.0
-        goal: 0.2
+        trajectory: 0.05
+        goal: 0.03
       link5_1_joint:
-        trajectory: 2.0
-        goal: 0.2
+        trajectory: 0.05
+        goal: 0.03
       link6_1_joint:
-        trajectory: 10.0
-        goal: 0.5
+        trajectory: 0.08
+        goal: 0.05

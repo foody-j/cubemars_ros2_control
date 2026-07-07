@@ -1,0 +1,139 @@
+bed:
+  height: 0.02
+  physical_height: 0.125899
+  physical_width: 0.126192
+  origin:
+    orientation:
+    - 0.640223
+    - -0.354282
+    - -0.633575
+    - -0.25136
+    position:
+    - -0.147427
+    - 0.417858
+    - 0.180904
+  stacking: world_z
+  width: 0.02
+  calibration:
+    enabled: true
+    method: four_point_flat_z
+    frame: base_link
+    tcp_link: tcp
+    updated_at: '2026-06-19T13:37:55'
+    point_order:
+    - front_left
+    - front_right
+    - back_left
+    - back_right
+    points:
+      front_left:
+      - -0.147427
+      - 0.417858
+      - 0.177934
+      front_right:
+      - -0.038066
+      - 0.401205
+      - 0.177597
+      back_left:
+      - -0.165242
+      - 0.301845
+      - 0.184174
+      back_right:
+      - -0.027784
+      - 0.267174
+      - 0.183909
+    origin:
+    - -0.147427
+    - 0.417858
+    - 0.180904
+    axis_u:
+    - 0.979057
+    - -0.203587
+    - 0.0
+    axis_v:
+    - -0.203587
+    - -0.979057
+    - 0.0
+    normal:
+    - 0.0
+    - 0.0
+    - 1.0
+    frame_quat:
+    - -0.0
+    - 0.0
+    - -0.102331
+    - 0.99475
+    physical_width: 0.126192
+    physical_height: 0.125899
+    plane_error_m: 0.0
+    front_back_width_error_m: 0.031141
+    left_right_height_error_m: 0.017052
+    orthogonality_error_deg: 0.0
+    z_mode: flat_average
+    z_reference_m: 0.180904
+    measured_z_range_m: 0.006577
+    measured_points:
+      front_left:
+      - -0.147427
+      - 0.417858
+      - 0.177934
+      front_right:
+      - -0.038066
+      - 0.401205
+      - 0.177597
+      back_left:
+      - -0.165242
+      - 0.301845
+      - 0.184174
+      back_right:
+      - -0.027784
+      - 0.267174
+      - 0.183909
+layer:
+  helix_enforce_world_up: true
+  helix_points_per_turn: 72
+  helix_radius_scale: 0.5
+  helix_start_angle_deg: 0.0
+  helix_start_clearance: 0.002
+  layer_height: 0.005
+  line_spacing: 0.01
+  num_layers: 1
+  pattern: circle
+motion:
+  approach_height: 0.01
+  approach_only: false
+  cartesian_max_step: 0.01
+  cartesian_min_fraction: 0.99
+  diagonal_lift_deg: 0.0
+  direct_teach_approach: true
+  min_bed_clearance: 0.0
+  prefer_joint_approach: true
+  safe_margin: 0.03
+  teach_move_duration: 15.0
+  velocity_scale: 0.3
+  z_offset: 0.0
+visualization:
+  live_plot: true
+  live_plot_rate_hz: 10.0
+extruder:
+  enabled: true
+  motor: C
+  mode: ROS
+  interval_us: 1000
+  direction: 0
+  require_bridge: true
+  stop_on_finish: true
+  prime:
+    manual_confirm: true
+    fixed_seconds: 0.0
+teach:
+  duration_sec: 3.0
+  joint_positions_deg:
+  - 15.5
+  - -65.4
+  - 29.9
+  - 43.7
+  - 44.9
+  - 0.0
+tool:
+  force_tcp_x_down: true

@@ -1,0 +1,32 @@
+# safe_poses.yaml
+# 안전한 기준 포즈 3개 정의 (단위: radian)
+# 모든 포즈는 Hall homing 완료 후 사용 가능
+
+safe_poses:
+  # 전원 차단/재시작 전 이동할 중력 안전 자세
+  # 팔이 낮고 접힌 형태로 — 무력화 시간에 낙하 위험 최소화
+  # ⚠ 로봇에 맞게 직접 조정 필요 (단위: radian)
+  park_pose:
+    joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    description: "Safe park pose before power-off or restart"
+    duration_sec: 4.0
+
+  # 모든 관절이 원점 (homing 직후 기본 위치)
+  home_pose:
+    joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    description: "All joints at home position"
+
+  # 작업 준비 자세 (팔을 앞으로 뻗은 형태)
+  ready_pose:
+    joint_positions: [0.0, -0.785, 1.57, 0.0, 0.785, 0.0]
+    description: "Robot ready for operation"
+
+  # 작업 포즈 (실제 작업 위치)
+  work_pose:
+    joint_positions: [0.2, -0.5, 1.2, 0.0, 0.5, 0.0]
+    description: "Robot at work position"
+
+# 이동 속도/가속도 설정 (안전 우선)
+motion:
+  velocity_rpm: 2.0       # RPM (최대 3.0)
+  acceleration_rpm_s: 5.0 # RPM/s

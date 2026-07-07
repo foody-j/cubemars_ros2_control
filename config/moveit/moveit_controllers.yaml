@@ -1,0 +1,20 @@
+# MoveIt Controller Manager configuration
+# Connects MoveIt to ros2_control's JointTrajectoryController
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+moveit_simple_controller_manager:
+  controller_names:
+    - my_robot_arm_controller
+
+  my_robot_arm_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - link1_1_joint
+      - link2_1_joint
+      - link3_1_joint
+      - link4_1_joint
+      - link5_1_joint
+      - link6_1_joint

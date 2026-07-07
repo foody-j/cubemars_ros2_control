@@ -1,0 +1,39 @@
+# Joint limits for MoveIt planning
+# These override URDF limits for motion planning (safety margins)
+
+joint_limits:
+  link1_1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.20
+    has_acceleration_limits: true
+    max_acceleration: 0.40
+
+  link2_1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.20
+    has_acceleration_limits: true
+    max_acceleration: 0.40
+
+  link3_1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.20
+    has_acceleration_limits: true
+    max_acceleration: 0.40
+
+  link4_1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.20
+    has_acceleration_limits: true
+    max_acceleration: 0.40
+
+  link5_1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.20
+    has_acceleration_limits: true
+    max_acceleration: 0.40
+
+  link6_1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.20
+    has_acceleration_limits: true
+    max_acceleration: 0.40

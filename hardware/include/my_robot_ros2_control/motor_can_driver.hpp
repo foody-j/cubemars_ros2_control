@@ -20,6 +20,7 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <functional>
 #include <atomic>
@@ -190,6 +191,28 @@ public:
                          [](const CanInterface& i) { return i.is_connected; });
     }
 
+    void set_position_command_rate_hz(double rate_hz) {
+        const double safe_rate_hz = std::clamp(rate_hz, 1.0, 200.0);
+        const auto interval_ms = static_cast<int>(std::lround(1000.0 / safe_rate_hz));
+        position_command_interval_ms_.store(std::max(interval_ms, 1));
+    }
+
+    bool set_can_logging(bool enabled) {
+        if (enabled) {
+            return can_logger.start_logging();
+        }
+        can_logger.stop_logging();
+        return true;
+    }
+
+    bool is_can_logging() {
+        return can_logger.is_logging();
+    }
+
+    std::string get_can_log_filename() {
+        return can_logger.get_filename();
+    }
+
     // 모터 명령 메서드들 (기존 코드와 유사하지만 모터 ID에 따라 적절한 CAN 인터페이스 선택)
 
     void write_brake_current(uint8_t driver_id, float brake_current_A) {
@@ -249,7 +272,7 @@ public:
         motor_commands_[driver_id - 1].value = rpm;
         motor_commands_[driver_id - 1].active = true;
         motor_commands_[driver_id - 1].command_type = CommandType::VELOCITY;
-        motor_commands_[driver_id - 1].last_sent = std::chrono::steady_clock::now();
+        motor_commands_[driver_id - 1].last_sent = std::chrono::steady_clock::now() - std::chrono::milliseconds(20);
     }
 
     void write_set_origin(uint8_t driver_id, bool is_permanent = false) {
@@ -273,13 +296,20 @@ public:
         
         // 모터 명령 업데이트
         std::lock_guard<std::mutex> lock(command_mutex_);
-        motor_commands_[driver_id - 1].motor_id = driver_id;
-        motor_commands_[driver_id - 1].position = position;
-        motor_commands_[driver_id - 1].velocity = rpm;
-        motor_commands_[driver_id - 1].acceleration = acceleration;
-        motor_commands_[driver_id - 1].active = true;
-        motor_commands_[driver_id - 1].command_type = CommandType::POSITION_VELOCITY;
-        motor_commands_[driver_id - 1].last_sent = std::chrono::steady_clock::now() - std::chrono::milliseconds(20);  // 과거 시간으로 설정
+        auto & command = motor_commands_[driver_id - 1];
+        const bool first_position_command =
+            !command.active || command.command_type != CommandType::POSITION_VELOCITY;
+        command.motor_id = driver_id;
+        command.position = position;
+        command.velocity = rpm;
+        command.acceleration = acceleration;
+        command.active = true;
+        command.command_type = CommandType::POSITION_VELOCITY;
+        if (first_position_command) {
+            command.last_sent =
+                std::chrono::steady_clock::now() -
+                std::chrono::milliseconds(position_command_interval_ms_.load());
+        }
     }
 
     // 모터 데이터 조회
@@ -474,6 +504,7 @@ private:
     MotorDataManager motor_manager_;
     std::thread command_thread_;
     std::atomic<bool> running_{false};
+    std::atomic<int> position_command_interval_ms_{10};
     std::mutex command_mutex_;
     CANLogger can_logger;  // CSV 로거 인스턴스
 
@@ -566,7 +597,7 @@ private:
         std::cout << "🧹 Cleaning up interface: " << interface_name << std::endl;
         
         // 강제로 인터페이스 다운
-        execute_command_safe("ip link set " + interface_name + " down", 
+        execute_command_safe("sudo ip link set " + interface_name + " down",
                            "Force down " + interface_name);
         
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -582,21 +613,21 @@ private:
             // 1. 기존 상태 정리
             cleanup_interface(can_name);
             // 2. CAN 인터페이스를 내린다 (안전 대기 포함)
-            if (!execute_command_safe("ip link set " + can_name + " down", 
+            if (!execute_command_safe("sudo ip link set " + can_name + " down",
                                     "Set " + can_name + " down")) {
                 throw std::runtime_error("Failed to set CAN interface down");
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
             // 3. bitrate 설정
-            std::string bitrate_cmd = "ip link set " + can_name + " type can bitrate " + std::to_string(bitrate);
+            std::string bitrate_cmd = "sudo ip link set " + can_name + " type can bitrate " + std::to_string(bitrate);
             if (!execute_command_safe(bitrate_cmd, "Set bitrate for " + can_name)) {
                 throw std::runtime_error("Failed to set CAN bitrate");
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
             // 4. CAN 인터페이스를 올린다 (안전 대기 포함)
-            if (!execute_command_safe("ip link set " + can_name + " up", 
+            if (!execute_command_safe("sudo ip link set " + can_name + " up",
                                     "Set " + can_name + " up")) {
                 throw std::runtime_error("Failed to set CAN interface up");
             }
@@ -691,7 +722,7 @@ private:
             
             // 인터페이스 다운
             std::stringstream ss;
-            ss << "ip link set " <<interface.name << " down";
+            ss << "sudo ip link set " << interface.name << " down";
             std::system(ss.str().c_str());
             
             interface.is_connected = false;
@@ -788,11 +819,6 @@ private:
     }
 
     void command_loop() {
-        static constexpr auto UPDATE_INTERVAL = std::chrono::milliseconds(10);
-        
-        // 🟢 로깅 시작
-        can_logger.start_logging();
-        
         while (running_) {
             auto current_time = std::chrono::steady_clock::now();
             
@@ -805,12 +831,16 @@ private:
                 }
                 
                 if (cmd_copy.active) {
+                    const auto update_interval =
+                        cmd_copy.command_type == CommandType::POSITION_VELOCITY
+                        ? std::chrono::milliseconds(position_command_interval_ms_.load())
+                        : std::chrono::milliseconds(10);
                     // std::cout << "*** COMMAND_LOOP: Motor " << static_cast<int>(cmd_copy.motor_id) 
                     //          << " active, type=" << static_cast<int>(cmd_copy.command_type) 
                     //          << ", pos=" << cmd_copy.position << std::endl;
                     
-                    // 마지막 전송 후 UPDATE_INTERVAL이 지났는지 확인
-                    if (current_time - cmd_copy.last_sent >= UPDATE_INTERVAL) {
+                    // 마지막 전송 후 명령별 update interval이 지났는지 확인
+                    if (current_time - cmd_copy.last_sent >= update_interval) {
                         // std::cout << "*** COMMAND_LOOP: Sending CAN frame for motor " 
                         //          << static_cast<int>(cmd_copy.motor_id) << std::endl;
                         

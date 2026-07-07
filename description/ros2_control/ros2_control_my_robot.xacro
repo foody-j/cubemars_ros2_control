@@ -1,15 +1,38 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
+    <xacro:arg name="use_hall_homing" default="true"/>
+    <xacro:arg name="can_logging_enabled_on_start" default="true"/>
+    <xacro:arg name="trajectory_command_rate_hz" default="100.0"/>
+
     <ros2_control name="my_robot_control" type="system">
         <hardware>
             <plugin>my_robot_ros2_control/MyRobotSystemHardware</plugin>
+            <param name="use_hall_homing">$(arg use_hall_homing)</param>
+            <param name="can_logging_enabled_on_start">$(arg can_logging_enabled_on_start)</param>
+            <param name="hall_homing_joints_count">5</param>
+            <param name="hall_trigger_state">1</param>
+            <param name="hall_homing_velocity">1.0</param>
+            <param name="hall_reapproach_velocity">1.0</param>
+            <param name="hall_backoff_duration_sec">0.4</param>
+            <param name="hall_joint_timeout_sec">60.0</param>
+            <param name="hall_homing_directions">1,1,1,1,-1,1</param>
+            <param name="hall_home_offsets_deg">0,-100,-202.5,-95,0,0</param>
+            <param name="trajectory_velocity_rpm">5.0</param>
+            <param name="trajectory_acceleration_rpm_s">20.0</param>
+            <param name="velocity_feedforward_scale">1.25</param>
+            <param name="final_catchup_velocity_rpm">0.10</param>
+            <param name="position_hold_velocity_rpm">0.30</param>
+            <param name="trajectory_catchup_time_sec">1.5</param>
+            <param name="trajectory_command_rate_hz">$(arg trajectory_command_rate_hz)</param>
         </hardware>
         
         <!-- Joint 1: Base rotation (Z-axis) -->
         <joint name="link1_1_joint">
             <command_interface name="position"/>
+            <command_interface name="velocity"/>
             <state_interface name="position"/>
+            <state_interface name="velocity"/>
             <param name="min">${-11.0 * pi / 9.0}</param>
             <param name="max">${pi / 2.0}</param>
         </joint>
@@ -17,7 +40,9 @@
         <!-- Joint 2: Shoulder pitch (X-axis) -->
         <joint name="link2_1_joint">
             <command_interface name="position"/>
+            <command_interface name="velocity"/>
             <state_interface name="position"/>
+            <state_interface name="velocity"/>
             <param name="min">${-pi / 2.0}</param>
             <param name="max">${pi / 2.0}</param>
         </joint>
@@ -25,7 +50,9 @@
         <!-- Joint 3: Elbow rotation (Z-axis) -->
         <joint name="link3_1_joint">
             <command_interface name="position"/>
+            <command_interface name="velocity"/>
             <state_interface name="position"/>
+            <state_interface name="velocity"/>
             <param name="min">${-pi / 9.0}</param>
             <param name="max">${3.0 * pi / 2.0}</param>
         </joint>
@@ -33,7 +60,9 @@
         <!-- Joint 4: Wrist pitch (X-axis) -->
         <joint name="link4_1_joint">
             <command_interface name="position"/>
+            <command_interface name="velocity"/>
             <state_interface name="position"/>
+            <state_interface name="velocity"/>
             <param name="min">${-19.0 * pi / 36.0}</param>
             <param name="max">${19.0 * pi / 36.0}</param>
         </joint>
@@ -41,7 +70,9 @@
         <!-- Joint 5: Wrist rotation (Z-axis) -->
         <joint name="link5_1_joint">
             <command_interface name="position"/>
+            <command_interface name="velocity"/>
             <state_interface name="position"/>
+            <state_interface name="velocity"/>
             <param name="min">${-pi / 9.0}</param>
             <param name="max">${31.0 * pi / 18.0}</param>
         </joint>
@@ -49,7 +80,9 @@
         <!-- Joint 6: End effector rotation (X-axis) -->
         <joint name="link6_1_joint">
             <command_interface name="position"/>
+            <command_interface name="velocity"/>
             <state_interface name="position"/>
+            <state_interface name="velocity"/>
             <param name="min">${-19.0 * pi / 36.0}</param>
             <param name="max">${19.0 * pi / 36.0}</param>
         </joint>

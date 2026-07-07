@@ -8,6 +8,8 @@
 #include <mutex>
 #include <linux/can.h>
 #include <iostream>
+#include <filesystem>
+#include <cstdlib>
 
 // CommandType은 기존 코드에서 정의됨 (중복 정의 제거)
 
@@ -41,8 +43,23 @@ public:
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             now.time_since_epoch()) % 1000;
         
+        // 로그 저장 디렉토리: ~/logs/can (없으면 생성). 실패 시 현재 폴더로 폴백
+        std::string log_dir;
+        if (const char* home = std::getenv("HOME")) {
+            log_dir = std::string(home) + "/logs/can";
+        } else {
+            log_dir = "logs/can";
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(log_dir, ec);
+        if (ec) {
+            std::cerr << "Failed to create log dir: " << log_dir
+                      << " (" << ec.message() << "), using current dir" << std::endl;
+            log_dir = ".";
+        }
+
         std::stringstream ss;
-        ss << "can_debug_log_" 
+        ss << log_dir << "/can_debug_log_"
            << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S")
            << "_" << std::setfill('0') << std::setw(3) << ms.count() << ".csv";
         log_filename = ss.str();
@@ -77,9 +94,8 @@ public:
                          int cmd_type, float position = 0.0f, 
                          float velocity = 0.0f, float acceleration = 0.0f, 
                          ssize_t result = 0, const std::string& can_interface = "") {
-        if (!logging_enabled) return;
-        
         std::lock_guard<std::mutex> lock(log_mutex);
+        if (!logging_enabled) return;
         
         auto now = std::chrono::steady_clock::now();
         auto absolute_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -116,9 +132,8 @@ public:
     
     void log_received_data(uint8_t motor_id, const struct can_frame& frame, 
                           const std::string& can_interface = "") {
-        if (!logging_enabled) return;
-        
         std::lock_guard<std::mutex> lock(log_mutex);
+        if (!logging_enabled) return;
         
         auto now = std::chrono::steady_clock::now();
         auto absolute_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -150,9 +165,8 @@ public:
     }
     
     void log_error(const std::string& error_message, uint8_t motor_id = 0) {
-        if (!logging_enabled) return;
-        
         std::lock_guard<std::mutex> lock(log_mutex);
+        if (!logging_enabled) return;
         
         auto now = std::chrono::steady_clock::now();
         auto absolute_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -167,11 +181,13 @@ public:
         csv_file.flush();
     }
     
-    bool is_logging() const {
+    bool is_logging() {
+        std::lock_guard<std::mutex> lock(log_mutex);
         return logging_enabled;
     }
     
-    std::string get_filename() const {
+    std::string get_filename() {
+        std::lock_guard<std::mutex> lock(log_mutex);
         return log_filename;
     }
 };

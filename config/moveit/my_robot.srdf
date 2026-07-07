@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--This file defines the semantic description of the robot (SRDF)-->
+<robot name="my_robot">
+
+    <!-- Planning Group: arm (6 DOF manipulator) -->
+    <group name="arm">
+        <chain base_link="base_link" tip_link="tcp"/>
+    </group>
+
+    <!-- Group States (Named robot poses) -->
+    <group_state name="home" group="arm">
+        <joint name="link1_1_joint" value="0"/>
+        <joint name="link2_1_joint" value="0"/>
+        <joint name="link3_1_joint" value="0"/>
+        <joint name="link4_1_joint" value="0"/>
+        <joint name="link5_1_joint" value="0"/>
+        <joint name="link6_1_joint" value="0"/>
+    </group_state>
+
+    <group_state name="ready" group="arm">
+        <joint name="link1_1_joint" value="0"/>
+        <joint name="link2_1_joint" value="0.5"/>
+        <joint name="link3_1_joint" value="1.0"/>
+        <joint name="link4_1_joint" value="0"/>
+        <joint name="link5_1_joint" value="0.5"/>
+        <joint name="link6_1_joint" value="0"/>
+    </group_state>
+
+    <!-- End Effector -->
+    <end_effector name="nozzle" parent_link="tcp" group="arm"/>
+
+    <!-- Disable Collisions (Adjacent links don't need collision checking) -->
+    <disable_collisions link1="base_link" link2="link1_motor" reason="Adjacent"/>
+    <disable_collisions link1="link1_motor" link2="link1_1" reason="Adjacent"/>
+    <disable_collisions link1="link1_1" link2="link1_2" reason="Adjacent"/>
+    <disable_collisions link1="link1_2" link2="link2_motor" reason="Adjacent"/>
+    <disable_collisions link1="link2_motor" link2="link2_1" reason="Adjacent"/>
+    <disable_collisions link1="link2_1" link2="link2_2" reason="Adjacent"/>
+    <disable_collisions link1="link2_2" link2="link2_3" reason="Adjacent"/>
+    <disable_collisions link1="link2_3" link2="link3_motor" reason="Adjacent"/>
+    <disable_collisions link1="link3_motor" link2="link3_1" reason="Adjacent"/>
+    <disable_collisions link1="link3_1" link2="link3_2" reason="Adjacent"/>
+    <disable_collisions link1="link3_2" link2="link4_motor" reason="Adjacent"/>
+    <disable_collisions link1="link4_motor" link2="link4_1" reason="Adjacent"/>
+    <disable_collisions link1="link4_1" link2="link4_2" reason="Adjacent"/>
+    <disable_collisions link1="link4_2" link2="link4_3" reason="Adjacent"/>
+    <disable_collisions link1="link4_3" link2="link5_motor" reason="Adjacent"/>
+    <disable_collisions link1="link5_motor" link2="link5_1" reason="Adjacent"/>
+    <disable_collisions link1="link5_1" link2="link5_2" reason="Adjacent"/>
+    <disable_collisions link1="link5_2" link2="link6_motor" reason="Adjacent"/>
+    <disable_collisions link1="link6_motor" link2="link6_1" reason="Adjacent"/>
+    <disable_collisions link1="link6_1" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="tool0" link2="tool_nozzle" reason="Adjacent"/>
+
+    <!-- Additional collision disables (non-adjacent but always safe) -->
+    <disable_collisions link1="base_link" link2="link1_1" reason="Never"/>
+    <disable_collisions link1="base_link" link2="link1_2" reason="Never"/>
+    <disable_collisions link1="link1_motor" link2="link1_2" reason="Never"/>
+    <disable_collisions link1="link2_motor" link2="link2_2" reason="Never"/>
+    <disable_collisions link1="link2_motor" link2="link2_3" reason="Never"/>
+    <disable_collisions link1="link2_1" link2="link2_3" reason="Never"/>
+    <disable_collisions link1="link3_motor" link2="link3_2" reason="Never"/>
+    <disable_collisions link1="link4_motor" link2="link4_2" reason="Never"/>
+    <disable_collisions link1="link4_motor" link2="link4_3" reason="Never"/>
+    <disable_collisions link1="link4_1" link2="link4_3" reason="Never"/>
+    <disable_collisions link1="link5_motor" link2="link5_2" reason="Never"/>
+    <disable_collisions link1="link6_motor" link2="tool0" reason="Never"/>
+    <disable_collisions link1="link6_1" link2="tool_nozzle" reason="Never"/>
+    <disable_collisions link1="tool0" link2="tcp" reason="Never"/>
+    <disable_collisions link1="tool_nozzle" link2="tcp" reason="Never"/>
+
+</robot>

@@ -1,0 +1,23 @@
+# Claude Code 개발 로그 (로컬 전용)
+.claude/
+
+# Build artifacts
+build/
+install/
+log/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# 백업 파일 제외
+*.orig
