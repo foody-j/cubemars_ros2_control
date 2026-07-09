@@ -26,6 +26,7 @@ GUI 런처: `~/ros2_ws/src/my_robot_operator_tools/my_robot_operator_tools/launc
 - Approach 이상동작 이슈 해결 완료 (커밋 9a994b1)
 - **Circle 패턴 IK 실패 해결** → `tool.force_tcp_x_down: false`로 변경. 교시 자세를 원 전체에 사용하니 Cartesian 100% 계획 성공, r=5.5mm에서 원 완성 확인.
 - **원 찌그러짐(선으로 붕괴) 해결** → `trajectory_catchup_time_sec` 1.5→0.4 (xacro). J4 추종오차 59%→9%, 원이 둥글게 나옴. 가능 반경 5.5→8mm 확대. 원인은 백래시가 아니라 느린 catchup(제어 튜닝).
+- **STL 적층 파이프라인 (궤적만, 압출 X)** → 미니 슬라이서(별도 repo)가 STL을 `toolpath.json`으로 자르고, 브릿지 `scripts/toolpath_layer_motion.py`가 이를 로봇 궤적으로 실행. `--dry-run` 좌표검증 완료. 하드웨어 실행만 남음. (아래 별도 섹션)
 
 ### 현재 미해결 이슈
 - **10mm 원은 아직 `-4`** — trial1(10mm)은 접근은 통과하나 원 실행 중 `-4`. 8mm는 성공.
@@ -88,6 +89,23 @@ tool:
 2. **velocity_ 상한 상향** (현재 5rpm) — 큰 반경일수록 필요 관절속도 증가.
 3. **JTC path tolerance 소폭 완화** (link*_joint trajectory 0.05→0.08) — 8mm 품질 확인 후.
 4. 8mm 수용하고 실제 적층 품질/non-planar 확장으로 진행.
+
+---
+
+## STL 적층 파이프라인 (궤적만, 압출 X) — 2026-07-09
+
+두 저장소에 걸쳐 있음. 경계 = `toolpath.json`.
+
+```
+[robot_mini_slicer]  --toolpath.json-->  [cubemars_ros2_control]
+ STL→층별 궤적(슬라이서)                  toolpath_layer_motion.py(브릿지)→로봇 실행
+ (별도 repo, 순수 파이썬)                 (기존 PlanarMotionNode 재활용)
+```
+
+- **슬라이서**: `~/robot_mini_slicer` (독립 git, GitHub foody-j/robot_mini_slicer). STL/도형 → 외곽선+인필 → `toolpath.json`(베드 로컬 mm). `python3 slice_cli.py --shape star --fit 45 --preview`.
+- **브릿지**: `scripts/toolpath_layer_motion.py`. `toolpath.json`을 베드좌표로 변환(`world=bed_center+x·u+y·v+(base+z)·n`) → 궤적 실행 + executed.png. 교시 quaternion 고정, travel Z 2mm 들기, base hover 5mm.
+- 검증: `--dry-run`(ROS 불필요, 좌표/범위만). 실행: Robot Launch+MoveIt+베드교시 후 `python3 scripts/toolpath_layer_motion.py --toolpath ~/robot_mini_slicer/output/star_fit45.json`. 처음엔 `--max-layers 1 --perimeter-only`.
+- 남은 것: **하드웨어 실제 실행**. 인필 포함 시 travel 오르내림 잦음.
 
 ---
 
@@ -159,7 +177,8 @@ tool:
 
 | 파일 | 역할 |
 |------|------|
-| `scripts/planar_layer_motion.py` | 메인 적층 스크립트 |
+| `scripts/planar_layer_motion.py` | 메인 적층 스크립트 (원/헬릭스/래스터 + PlanarMotionNode) |
+| `scripts/toolpath_layer_motion.py` | STL 브릿지: toolpath.json → 로봇 궤적 (미니 슬라이서 연동) |
 | `scripts/teach_bed_four_points.py` | 베드 4점 교시 |
 | `scripts/teach_bed_by_joints.py` | 조인트 기반 베드 교시 |
 | `hardware/my_robot.cpp` | 하드웨어 인터페이스 (CAN, 교시모드, 호밍) |
