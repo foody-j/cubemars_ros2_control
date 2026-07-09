@@ -57,7 +57,7 @@ def compute_bed(cfg):
     safe_z = origin_pos[2] + safe_margin
     return dict(center=bed_center, u=axis_u, v=axis_v, n=bed_normal,
                quat=quat, safe_z=safe_z, origin_z=origin_pos[2],
-               phys=(pw, ph))
+               origin=origin_pos, phys=(pw, ph))
 
 
 def part_to_world(x_mm, y_mm, z_mm, bed, base_clearance):
@@ -174,6 +174,18 @@ def main():
         cartesian_min_fraction=float(cfg["motion"].get("cartesian_min_fraction", 0.99)))
     node.configure_bed_floor(bed["center"], bed["n"],
                              min_clearance=float(cfg["motion"].get("min_bed_clearance", 0.0)))
+
+    # --- 실시간 2D 탑뷰 플롯 (베드 + 계획경로 + 실제 TCP) ---
+    o, u, v = bed["origin"], bed["u"], bed["v"]
+    pw_m2, ph_m2 = bed["phys"]
+    bed_corners = np.array([o, o + pw_m2 * u, o + pw_m2 * u + ph_m2 * v,
+                            o + ph_m2 * v, o])[:, :2]
+    planned_all = [pose for _, poses in flat for pose in poses]  # 전체 계획 경로(초록)
+    vis = cfg.get("visualization", {})
+    if bool(vis.get("live_plot", True)):
+        node.start_live_plot(bed_corners, planned_all,
+                             update_rate_hz=float(vis.get("live_plot_rate_hz", 10.0)))
+        print("[시각화] 실시간 플롯 창을 띄웠습니다 (별도 창).")
     node.start_actual_recording(rate_hz=20.0)
 
     # 1) 교시 자세로 이동
@@ -218,6 +230,7 @@ def main():
         except Exception:
             pass
         node.stop_actual_recording()
+        node.stop_live_plot()
         js = node.get_current_joint_state()
         if js is not None:
             pos_by_name = dict(zip(js.name, js.position))
