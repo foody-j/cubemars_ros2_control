@@ -1,25 +1,28 @@
 bed:
   height: 0.02
-  physical_height: 0.125899
-  physical_width: 0.126192
+  physical_height: 0.135812
+  physical_width: 0.066639
   origin:
     orientation:
-    - 0.640223
-    - -0.354282
-    - -0.633575
-    - -0.25136
+    - 0.666983
+    - -0.334207
+    - -0.58109
+    - -0.325228
     position:
-    - -0.147427
-    - 0.417858
-    - 0.180904
+    - -0.128318
+    - 0.422802
+    - 0.181685
   stacking: world_z
   width: 0.02
   calibration:
     enabled: true
     method: four_point_flat_z
+    z_mode: flat_average
+    z_reference_m: 0.181685
+    measured_z_range_m: 0.034257
     frame: base_link
     tcp_link: tcp
-    updated_at: '2026-06-19T13:37:55'
+    updated_at: '2026-07-08T17:45:36'
     point_order:
     - front_left
     - front_right
@@ -27,32 +30,49 @@ bed:
     - back_right
     points:
       front_left:
-      - -0.147427
-      - 0.417858
-      - 0.177934
+      - -0.128318
+      - 0.422802
+      - 0.173634
       front_right:
-      - -0.038066
-      - 0.401205
-      - 0.177597
+      - -0.042051
+      - 0.402299
+      - 0.202325
       back_left:
-      - -0.165242
-      - 0.301845
-      - 0.184174
+      - -0.140011
+      - 0.297434
+      - 0.168068
       back_right:
-      - -0.027784
-      - 0.267174
-      - 0.183909
+      - -0.104383
+      - 0.270593
+      - 0.182713
+    measured_points:
+      front_left:
+      - -0.128318
+      - 0.422802
+      - 0.173634
+      front_right:
+      - -0.042051
+      - 0.402299
+      - 0.202325
+      back_left:
+      - -0.140011
+      - 0.297434
+      - 0.168068
+      back_right:
+      - -0.104383
+      - 0.270593
+      - 0.182713
     origin:
-    - -0.147427
-    - 0.417858
-    - 0.180904
+    - -0.128318
+    - 0.422802
+    - 0.181685
     axis_u:
-    - 0.979057
-    - -0.203587
+    - 0.932158
+    - -0.362053
     - 0.0
     axis_v:
-    - -0.203587
-    - -0.979057
+    - -0.362053
+    - -0.932158
     - 0.0
     normal:
     - 0.0
@@ -61,34 +81,14 @@ bed:
     frame_quat:
     - -0.0
     - 0.0
-    - -0.102331
-    - 0.99475
-    physical_width: 0.126192
-    physical_height: 0.125899
+    - -0.184177
+    - 0.982893
+    physical_width: 0.066639
+    physical_height: 0.135812
     plane_error_m: 0.0
-    front_back_width_error_m: 0.031141
-    left_right_height_error_m: 0.017052
+    front_back_width_error_m: 0.044063
+    left_right_height_error_m: 0.0198
     orthogonality_error_deg: 0.0
-    z_mode: flat_average
-    z_reference_m: 0.180904
-    measured_z_range_m: 0.006577
-    measured_points:
-      front_left:
-      - -0.147427
-      - 0.417858
-      - 0.177934
-      front_right:
-      - -0.038066
-      - 0.401205
-      - 0.177597
-      back_left:
-      - -0.165242
-      - 0.301845
-      - 0.184174
-      back_right:
-      - -0.027784
-      - 0.267174
-      - 0.183909
 layer:
   helix_enforce_world_up: true
   helix_points_per_turn: 72
@@ -136,4 +136,4 @@ teach:
   - 44.9
   - 0.0
 tool:
-  force_tcp_x_down: true
+  force_tcp_x_down: false

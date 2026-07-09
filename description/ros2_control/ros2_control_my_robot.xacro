@@ -23,7 +23,7 @@
             <param name="velocity_feedforward_scale">1.25</param>
             <param name="final_catchup_velocity_rpm">0.10</param>
             <param name="position_hold_velocity_rpm">0.30</param>
-            <param name="trajectory_catchup_time_sec">1.5</param>
+            <param name="trajectory_catchup_time_sec">0.4</param>
             <param name="trajectory_command_rate_hz">$(arg trajectory_command_rate_hz)</param>
         </hardware>
         
